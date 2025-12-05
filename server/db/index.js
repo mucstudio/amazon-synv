@@ -133,9 +133,12 @@ export async function initDb() {
     proxyRotateByCount: '10',
     proxyRotateByTime: '60',
     proxyMaxFailures: '3',
+    proxySwitchOnFail: 'true',   // 失败时自动切换代理
+    proxyFailRetryCount: '2',    // 切换代理后重试次数
     saveHtml: 'false',
     fulfillmentFilter: 'all',   // all=全部, fba=只爬FBA, fbm=只爬FBM
-    fingerprintRotate: 'captcha', // captcha=遇到验证码时, batch=每批次, count=按次数, request=每次请求
+    fingerprintRotateOnCaptcha: 'true',  // 遇到验证码时更换指纹（独立开关）
+    fingerprintRotate: 'none',   // none=不主动轮换, batch=每批次, count=按次数, request=每次请求
     fingerprintRotateCount: '10', // 按次数更换时的次数
     captchaHandling: 'auto',      // auto=自动处理, skip=跳过, retry=重试
     captchaRetryCount: '2',       // 验证码重试次数

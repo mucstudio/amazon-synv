@@ -47,10 +47,14 @@
 
     <el-card style="margin-top: 20px;">
       <template #header>反检测设置</template>
-      <el-form :model="settings" label-width="160px" style="max-width: 600px;">
+      <el-form :model="settings" label-width="180px" style="max-width: 650px;">
+        <el-form-item label="遇到验证码时更换指纹">
+          <el-switch v-model="settings.fingerprintRotateOnCaptcha" />
+          <span class="form-hint">检测到验证码时自动更换浏览器指纹</span>
+        </el-form-item>
         <el-form-item label="指纹轮换策略">
           <el-select v-model="settings.fingerprintRotate" style="width: 180px;">
-            <el-option value="captcha" label="遇到验证码时更换" />
+            <el-option value="none" label="不主动轮换" />
             <el-option value="batch" label="每批次更换" />
             <el-option value="count" label="按请求次数更换" />
             <el-option value="request" label="每次请求更换" />
@@ -105,6 +109,14 @@
           <el-input-number v-model="settings.proxyMaxFailures" :min="1" :max="10" />
           <span class="form-hint">失败N次后禁用该代理</span>
         </el-form-item>
+        <el-form-item label="失败自动切换">
+          <el-switch v-model="settings.proxySwitchOnFail" />
+          <span class="form-hint">请求失败时自动切换到下一个代理重试</span>
+        </el-form-item>
+        <el-form-item label="失败重试次数" v-if="settings.proxySwitchOnFail">
+          <el-input-number v-model="settings.proxyFailRetryCount" :min="1" :max="5" />
+          <span class="form-hint">切换代理后最多重试N次</span>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -129,9 +141,12 @@ const settings = ref({
   proxyRotateByCount: 10,
   proxyRotateByTime: 60,
   proxyMaxFailures: 3,
+  proxySwitchOnFail: true,      // 失败时自动切换代理
+  proxyFailRetryCount: 2,       // 切换代理后重试次数
   saveHtml: false,
   fulfillmentFilter: 'all',
-  fingerprintRotate: 'captcha',
+  fingerprintRotateOnCaptcha: true,  // 遇到验证码时更换指纹
+  fingerprintRotate: 'none',          // 主动轮换策略：none/batch/count/request
   fingerprintRotateCount: 10,
   captchaHandling: 'auto',
   captchaRetryCount: 2,

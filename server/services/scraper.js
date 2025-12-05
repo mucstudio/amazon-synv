@@ -138,8 +138,10 @@ export class Scraper {
       if (this.hasCaptcha(html)) {
         console.log(`⚠️ 检测到验证码: ${asin}`);
         
-        // 更换浏览器指纹
-        this.rotateFingerprint();
+        // 根据设置决定是否更换浏览器指纹
+        if (settings.fingerprintRotateOnCaptcha !== false) {
+          this.rotateFingerprint();
+        }
         
         const captchaHandling = settings.captchaHandling || 'auto';
         const captchaRetryCount = settings.captchaRetryCount || 2;
@@ -180,10 +182,16 @@ export class Scraper {
 
       // 检测封禁
       if (this.isBlocked(html, response.status)) {
-        // 如果有代理，标记失败并重试
-        if (currentProxy && retryCount < 2) {
+        // 如果有代理且开启了失败自动切换
+        if (currentProxy) {
           this.markProxyFailed(currentProxy, settings.proxyMaxFailures || 3);
-          return this.scrapeProduct(asin, settings, retryCount + 1);
+          const maxRetry = settings.proxyFailRetryCount || 2;
+          if (settings.proxySwitchOnFail && retryCount < maxRetry) {
+            // 强制切换到下一个代理
+            this.forceNextProxy();
+            console.log(`  🔄 代理被封禁，切换代理重试 (${retryCount + 1}/${maxRetry}): ${asin}`);
+            return this.scrapeProduct(asin, settings, retryCount + 1);
+          }
         }
         throw new Error('IP_BLOCKED');
       }
@@ -208,8 +216,15 @@ export class Scraper {
       
       return product;
     } catch (error) {
-      if (currentProxy && error.code === 'ECONNREFUSED') {
+      // 网络错误时，如果开启了失败自动切换，尝试切换代理重试
+      if (currentProxy && (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET')) {
         this.markProxyFailed(currentProxy, settings.proxyMaxFailures || 3);
+        const maxRetry = settings.proxyFailRetryCount || 2;
+        if (settings.proxySwitchOnFail && retryCount < maxRetry) {
+          this.forceNextProxy();
+          console.log(`  🔄 代理连接失败，切换代理重试 (${retryCount + 1}/${maxRetry}): ${asin}`);
+          return this.scrapeProduct(asin, settings, retryCount + 1);
+        }
       }
       throw error;
     }
@@ -1182,6 +1197,14 @@ export class Scraper {
   markProxySuccess(proxyUrl) {
     const db = getDb();
     db.prepare('UPDATE proxies SET successCount = successCount + 1 WHERE url = ?').run(proxyUrl);
+  }
+
+  /**
+   * 强制切换到下一个代理（失败时调用）
+   */
+  forceNextProxy() {
+    this.proxyIndex++;
+    console.log(`🔄 强制切换到下一个代理 (index: ${this.proxyIndex})`);
   }
 
   /**

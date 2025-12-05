@@ -259,9 +259,12 @@ export class TaskRunner {
       proxyRotateByCount: parseNum(settings.proxyRotateByCount, 10),  // 0 = 禁用
       proxyRotateByTime: parseNum(settings.proxyRotateByTime, 60),    // 0 = 禁用
       proxyMaxFailures: parseNum(settings.proxyMaxFailures, 3),
+      proxySwitchOnFail: settings.proxySwitchOnFail !== 'false',      // 默认 true
+      proxyFailRetryCount: parseNum(settings.proxyFailRetryCount, 2),
       saveHtml: settings.saveHtml === 'true',
       fulfillmentFilter: settings.fulfillmentFilter || 'all', // all, fba, fbm
-      fingerprintRotate: settings.fingerprintRotate || 'captcha', // captcha, batch, count, request
+      fingerprintRotateOnCaptcha: settings.fingerprintRotateOnCaptcha !== 'false', // 默认 true
+      fingerprintRotate: settings.fingerprintRotate || 'none', // none, batch, count, request
       fingerprintRotateCount: parseNum(settings.fingerprintRotateCount, 10),
       captchaHandling: settings.captchaHandling || 'auto', // auto, skip, retry
       captchaRetryCount: parseNum(settings.captchaRetryCount, 2),
