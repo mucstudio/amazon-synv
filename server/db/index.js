@@ -212,6 +212,10 @@ export async function initDb() {
       db.exec("ALTER TABLE proxies ADD COLUMN usageCount INTEGER DEFAULT 0");
       console.log('已添加 proxies.usageCount 列');
     }
+    if (!proxyColumnNames.includes('totalUsageCount')) {
+      db.exec("ALTER TABLE proxies ADD COLUMN totalUsageCount INTEGER DEFAULT 0");
+      console.log('已添加 proxies.totalUsageCount 列');
+    }
   } catch (e) {
     console.error('迁移失败:', e.message);
   }

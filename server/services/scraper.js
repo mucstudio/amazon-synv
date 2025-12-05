@@ -201,6 +201,11 @@ export class Scraper {
       // 需要从 Other Sellers 获取价格，但这需要浏览器支持（待开发）
       // 当前保持 "See All Buying Options" 状态，不尝试获取可能错误的价格
       
+      // 标记代理成功
+      if (currentProxy) {
+        this.markProxySuccess(currentProxy);
+      }
+      
       return product;
     } catch (error) {
       if (currentProxy && error.code === 'ECONNREFUSED') {
@@ -1166,9 +1171,17 @@ export class Scraper {
       console.log(`🔄 按次数轮换代理 (已使用${settings.proxyRotateByCount}次)`);
     }
 
-    // 更新使用次数和最后使用时间
-    db.prepare('UPDATE proxies SET usageCount = usageCount + 1, lastUsedAt = CURRENT_TIMESTAMP WHERE id = ?').run(proxy.id);
+    // 更新使用次数和最后使用时间（usageCount 用于轮换，totalUsageCount 记录总次数）
+    db.prepare('UPDATE proxies SET usageCount = usageCount + 1, totalUsageCount = totalUsageCount + 1, lastUsedAt = CURRENT_TIMESTAMP WHERE id = ?').run(proxy.id);
     return proxy.url;
+  }
+
+  /**
+   * 标记代理成功
+   */
+  markProxySuccess(proxyUrl) {
+    const db = getDb();
+    db.prepare('UPDATE proxies SET successCount = successCount + 1 WHERE url = ?').run(proxyUrl);
   }
 
   /**

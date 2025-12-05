@@ -242,23 +242,30 @@ export class TaskRunner {
     for (const row of rows) {
       settings[row.key] = row.value;
     }
+    
+    // 辅助函数：解析数字，支持 0 值（不使用 || 避免 0 被当作 falsy）
+    const parseNum = (val, defaultVal) => {
+      const num = Number(val);
+      return isNaN(num) ? defaultVal : num;
+    };
+    
     return {
-      concurrency: Number(settings.concurrency) || 5,
-      requestDelay: Number(settings.requestDelay) || 1000,
-      timeout: Number(settings.timeout) || 30000,
+      concurrency: parseNum(settings.concurrency, 5),
+      requestDelay: parseNum(settings.requestDelay, 1000),
+      timeout: parseNum(settings.timeout, 30000),
       amazonDomain: settings.amazonDomain || 'https://www.amazon.com',
       zipCode: settings.zipCode || '10001',
       proxyEnabled: settings.proxyEnabled === 'true',
-      proxyRotateByCount: Number(settings.proxyRotateByCount) || 10,
-      proxyRotateByTime: Number(settings.proxyRotateByTime) || 60,
-      proxyMaxFailures: Number(settings.proxyMaxFailures) || 3,
+      proxyRotateByCount: parseNum(settings.proxyRotateByCount, 10),  // 0 = 禁用
+      proxyRotateByTime: parseNum(settings.proxyRotateByTime, 60),    // 0 = 禁用
+      proxyMaxFailures: parseNum(settings.proxyMaxFailures, 3),
       saveHtml: settings.saveHtml === 'true',
       fulfillmentFilter: settings.fulfillmentFilter || 'all', // all, fba, fbm
       fingerprintRotate: settings.fingerprintRotate || 'captcha', // captcha, batch, count, request
-      fingerprintRotateCount: Number(settings.fingerprintRotateCount) || 10,
+      fingerprintRotateCount: parseNum(settings.fingerprintRotateCount, 10),
       captchaHandling: settings.captchaHandling || 'auto', // auto, skip, retry
-      captchaRetryCount: Number(settings.captchaRetryCount) || 2,
-      captchaTimeout: Number(settings.captchaTimeout) || 300,
+      captchaRetryCount: parseNum(settings.captchaRetryCount, 2),
+      captchaTimeout: parseNum(settings.captchaTimeout, 300),
     };
   }
 

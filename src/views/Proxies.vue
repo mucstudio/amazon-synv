@@ -56,6 +56,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
+        <el-table-column prop="totalUsageCount" label="总次数" width="70" />
         <el-table-column prop="successCount" label="成功" width="60" />
         <el-table-column prop="failCount" label="失败" width="60" />
         <el-table-column prop="lastUsedAt" label="最后使用" width="160" />
