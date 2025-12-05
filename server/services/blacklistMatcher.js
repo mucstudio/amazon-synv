@@ -15,6 +15,39 @@ export class BlacklistMatcher {
   }
 
   /**
+   * 解码 HTML 实体（支持多种格式）
+   * @param {string} text - 要解码的文本
+   * @returns {string} 解码后的文本
+   */
+  decodeHtmlEntities(text) {
+    if (!text) return '';
+    return text
+      // 十六进制格式: &#x27; -> '
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+      // 十进制格式: &#39; -> '
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
+      // 命名实体
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      // 处理可能的双重编码
+      .replace(/&amp;#/g, '&#');
+  }
+
+  /**
+   * 标准化文本（解码 + 小写 + 去除多余空格）
+   * @param {string} text - 要标准化的文本
+   * @returns {string} 标准化后的文本
+   */
+  normalizeText(text) {
+    if (!text) return '';
+    return this.decodeHtmlEntities(text).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  /**
    * 从数据库加载黑名单到内存索引
    */
   loadBlacklist() {
@@ -27,11 +60,11 @@ export class BlacklistMatcher {
     this.index.tro.clear();
     this.index.seller.clear();
     
-    // 构建索引（小写化）
+    // 构建索引（解码 + 小写化）
     for (const { keyword, type } of keywords) {
-      const lowerKeyword = keyword.toLowerCase().trim();
-      if (this.index[type]) {
-        this.index[type].add(lowerKeyword);
+      const normalizedKeyword = this.normalizeText(keyword);
+      if (normalizedKeyword && this.index[type]) {
+        this.index[type].add(normalizedKeyword);
       }
     }
     
@@ -54,16 +87,43 @@ export class BlacklistMatcher {
       return [];
     }
     
-    const lowerText = text.toLowerCase();
+    // 使用 normalizeText 对输入文本进行标准化（解码 HTML 实体 + 小写 + 去除多余空格）
+    const normalizedText = this.normalizeText(text);
     const matched = [];
     
     for (const keyword of this.index[type]) {
-      if (lowerText.includes(keyword)) {
+      if (normalizedText.includes(keyword)) {
         matched.push(keyword);
       }
     }
     
     return matched;
+  }
+
+  /**
+   * 从商品属性中提取 Brand 字段
+   * @param {Object} product - 商品对象
+   * @returns {string} Brand 值
+   */
+  extractBrandFromAttributes(product) {
+    if (!product.attributes) return '';
+    
+    try {
+      const attrs = typeof product.attributes === 'string' 
+        ? JSON.parse(product.attributes) 
+        : product.attributes;
+      
+      // 查找 Brand 字段（不区分大小写）
+      for (const [key, value] of Object.entries(attrs)) {
+        if (key.toLowerCase() === 'brand') {
+          return value || '';
+        }
+      }
+    } catch (e) {
+      // 解析失败，返回空
+    }
+    
+    return '';
   }
 
   /**
@@ -95,8 +155,14 @@ export class BlacklistMatcher {
       product.description || ''
     ].join(' ');
     
-    // 匹配各类型黑名单
-    const matchedBrand = this.matchText(searchText, 'brand');
+    // 提取商品属性中的 Brand 字段
+    const brandFromAttrs = this.extractBrandFromAttributes(product);
+    
+    // 品牌匹配：标题 + 五点描述 + 描述 + 属性中的 Brand
+    const brandSearchText = searchText + ' ' + brandFromAttrs;
+    const matchedBrand = this.matchText(brandSearchText, 'brand');
+    
+    // 其他类型只匹配标题 + 五点描述 + 描述
     const matchedProduct = this.matchText(searchText, 'product');
     const matchedTro = this.matchText(searchText, 'tro');
     const matchedSeller = this.matchText(product.sellerName || '', 'seller');

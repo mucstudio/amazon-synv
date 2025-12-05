@@ -55,6 +55,21 @@
           <el-button type="warning" @click="batchDelete" :disabled="selectedIds.length === 0">
             批量删除 ({{ selectedIds.length }})
           </el-button>
+          <el-dropdown @command="handleExport" style="margin-left: 12px;">
+            <el-button>
+              导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="brand">导出品牌违规词</el-dropdown-item>
+                <el-dropdown-item command="product">导出产品违规词</el-dropdown-item>
+                <el-dropdown-item command="tro">导出TRO违规词</el-dropdown-item>
+                <el-dropdown-item command="seller">导出黑名单卖家</el-dropdown-item>
+                <el-dropdown-item command="all" divided>导出全部</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button type="primary" @click="showImportDialog" style="margin-left: 12px;">导入</el-button>
           <el-dropdown @command="handleClear" style="margin-left: 12px;">
             <el-button type="danger">
               清空 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -165,6 +180,50 @@
         <el-button type="primary" @click="submitBatchForm">批量添加</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导入弹窗 -->
+    <el-dialog v-model="importDialogVisible" title="导入黑名单" width="600px">
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+        <template #title>
+          <div>支持 CSV 格式文件，包含列：关键词、类型代码、备注</div>
+          <div style="margin-top: 4px;">类型代码：brand(品牌违规词)、product(产品违规词)、tro(TRO违规词)、seller(黑名单卖家)</div>
+        </template>
+      </el-alert>
+      
+      <el-upload
+        ref="uploadRef"
+        drag
+        :auto-upload="false"
+        :limit="1"
+        accept=".csv"
+        :on-change="handleFileChange"
+        :on-exceed="handleExceed"
+      >
+        <el-icon class="el-icon--upload"><Upload /></el-icon>
+        <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
+        <template #tip>
+          <div class="el-upload__tip">只支持 CSV 文件</div>
+        </template>
+      </el-upload>
+      
+      <div v-if="importPreview.length > 0" style="margin-top: 16px;">
+        <div style="margin-bottom: 8px; color: #606266;">预览（前10条）：</div>
+        <el-table :data="importPreview" size="small" max-height="200">
+          <el-table-column prop="keyword" label="关键词" />
+          <el-table-column prop="type" label="类型代码" width="100" />
+          <el-table-column prop="description" label="备注" />
+        </el-table>
+        <div style="margin-top: 8px; color: #909399;">共 {{ importData.length }} 条数据</div>
+      </div>
+      
+      <template #footer>
+        <el-button @click="downloadTemplate">下载模板</el-button>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitImport" :disabled="importData.length === 0">
+          导入 ({{ importData.length }})
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -172,7 +231,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { ArrowDown } from '@element-plus/icons-vue';
+import { ArrowDown, Upload } from '@element-plus/icons-vue';
 import api from '../api';
 
 const list = ref([]);
@@ -186,9 +245,13 @@ const stats = ref({});
 
 const dialogVisible = ref(false);
 const batchDialogVisible = ref(false);
+const importDialogVisible = ref(false);
 const editingId = ref(null);
 const form = ref({ keyword: '', type: 'brand', description: '' });
 const batchForm = ref({ keywords: '', type: 'brand', description: '' });
+const uploadRef = ref(null);
+const importData = ref([]);
+const importPreview = ref([]);
 
 const typeTagMap = {
   brand: { label: '品牌违规词', type: 'danger' },
@@ -321,6 +384,134 @@ const handleClear = async (type) => {
     loadStats();
   } catch (e) {
     ElMessage.error('清空失败');
+  }
+};
+
+// 导出功能
+const handleExport = async (type) => {
+  try {
+    const res = await api.exportBlacklist(type === 'all' ? '' : type);
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `blacklist_${type}_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success('导出成功');
+  } catch (e) {
+    ElMessage.error('导出失败');
+  }
+};
+
+// 下载模板
+const downloadTemplate = async () => {
+  try {
+    const res = await api.downloadBlacklistTemplate();
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'blacklist_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    ElMessage.error('下载模板失败');
+  }
+};
+
+// 显示导入弹窗
+const showImportDialog = () => {
+  importData.value = [];
+  importPreview.value = [];
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles();
+  }
+  importDialogVisible.value = true;
+};
+
+// 解析 CSV
+const parseCSV = (text) => {
+  const lines = text.split(/\r?\n/).filter(line => line.trim() && !line.trim().startsWith('#'));
+  if (lines.length < 2) return [];
+  
+  const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  const data = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      if (char === '"') {
+        if (inQuotes && line[j + 1] === '"') {
+          current += '"';
+          j++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    
+    if (values.length >= 2) {
+      const row = {};
+      header.forEach((h, idx) => {
+        row[h] = values[idx] || '';
+      });
+      // 兼容中英文列名
+      row.keyword = row['关键词'] || row.keyword || values[0] || '';
+      row.type = row['类型代码'] || row.type || values[1] || '';
+      row.description = row['备注'] || row.description || values[2] || '';
+      
+      if (row.keyword) {
+        data.push(row);
+      }
+    }
+  }
+  
+  return data;
+};
+
+// 文件选择处理
+const handleFileChange = (file) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    const data = parseCSV(text);
+    importData.value = data;
+    importPreview.value = data.slice(0, 10);
+  };
+  reader.readAsText(file.raw, 'UTF-8');
+};
+
+const handleExceed = () => {
+  ElMessage.warning('只能上传一个文件');
+};
+
+// 提交导入
+const submitImport = async () => {
+  if (importData.value.length === 0) {
+    ElMessage.warning('没有可导入的数据');
+    return;
+  }
+  
+  try {
+    const res = await api.importBlacklist(importData.value);
+    ElMessage.success(res.data.message);
+    importDialogVisible.value = false;
+    loadList();
+    loadStats();
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '导入失败');
   }
 };
 

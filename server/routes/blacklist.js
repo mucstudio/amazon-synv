@@ -172,4 +172,119 @@ router.delete('/clear/:type', (req, res) => {
   }
 });
 
+// 导出黑名单为 CSV
+router.get('/export', (req, res) => {
+  const db = getDb();
+  const { type } = req.query;
+  
+  let sql = 'SELECT keyword, type, description, createdAt FROM blacklist';
+  const params = [];
+  
+  if (type && BLACKLIST_TYPES.includes(type)) {
+    sql += ' WHERE type = ?';
+    params.push(type);
+  }
+  
+  sql += ' ORDER BY type, keyword';
+  const list = db.prepare(sql).all(...params);
+  
+  // 生成 CSV 内容（带 BOM 支持中文）
+  const typeNames = { brand: '品牌违规词', product: '产品违规词', tro: 'TRO违规词', seller: '黑名单卖家' };
+  const BOM = '\uFEFF';
+  const header = '关键词,类型,类型代码,备注,添加时间\n';
+  const rows = list.map(item => {
+    const keyword = `"${(item.keyword || '').replace(/"/g, '""')}"`;
+    const typeName = typeNames[item.type] || item.type;
+    const description = `"${(item.description || '').replace(/"/g, '""')}"`;
+    const createdAt = item.createdAt || '';
+    return `${keyword},${typeName},${item.type},${description},${createdAt}`;
+  }).join('\n');
+  
+  const csv = BOM + header + rows;
+  
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename=blacklist_${type || 'all'}_${Date.now()}.csv`);
+  res.send(csv);
+});
+
+// 下载导入模板
+router.get('/template', (req, res) => {
+  const BOM = '\uFEFF';
+  const lines = [
+    '关键词,类型代码,备注',
+    '# ===== 以下是示例数据，可直接使用或删除后填入自己的数据 =====',
+    'Nike,brand,品牌违规词示例',
+    'Adidas,brand,品牌违规词示例',
+    '"Belle\'s Beauty",brand,带特殊字符的品牌',
+    'wireless charger,product,产品违规词示例',
+    'bluetooth speaker,product,产品违规词示例',
+    'PatentedTech,tro,TRO违规词示例',
+    'BadSeller Store,seller,黑名单卖家示例',
+    '# ===== 说明 =====',
+    '# 类型代码必须是以下之一:',
+    '#   brand   - 品牌违规词',
+    '#   product - 产品违规词', 
+    '#   tro     - TRO违规词',
+    '#   seller  - 黑名单卖家',
+    '# 关键词列必填，备注列可选',
+    '# 如果关键词包含逗号，请用双引号包裹',
+    '# 以 # 开头的行会被自动跳过',
+  ];
+  
+  const csv = BOM + lines.join('\n');
+  
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename=blacklist_template.csv');
+  res.send(csv);
+});
+
+// 导入黑名单（CSV）
+router.post('/import', (req, res) => {
+  const db = getDb();
+  const { data } = req.body;
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: '没有有效的导入数据' });
+  }
+  
+  let added = 0;
+  let skipped = 0;
+  let invalid = 0;
+  
+  const insert = db.prepare('INSERT OR IGNORE INTO blacklist (keyword, type, description) VALUES (?, ?, ?)');
+  
+  db.transaction(() => {
+    for (const row of data) {
+      const keyword = (row.keyword || row['关键词'] || '').trim();
+      let type = (row.type || row['类型代码'] || '').trim().toLowerCase();
+      const description = (row.description || row['备注'] || '').trim();
+      
+      // 跳过空行和注释行
+      if (!keyword || keyword.startsWith('#')) {
+        continue;
+      }
+      
+      // 验证类型
+      if (!BLACKLIST_TYPES.includes(type)) {
+        invalid++;
+        continue;
+      }
+      
+      const result = insert.run(keyword, type, description);
+      if (result.changes > 0) {
+        added++;
+      } else {
+        skipped++;
+      }
+    }
+  })();
+  
+  res.json({ 
+    added, 
+    skipped, 
+    invalid,
+    message: `成功导入 ${added} 个，跳过 ${skipped} 个重复项，${invalid} 个无效行` 
+  });
+});
+
 export default router;

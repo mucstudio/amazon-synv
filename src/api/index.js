@@ -53,6 +53,9 @@ export default {
   deleteBlacklist: (id) => http.delete(`/blacklist/${id}`),
   batchDeleteBlacklist: (ids) => http.post('/blacklist/batch-delete', { ids }),
   clearBlacklist: (type) => http.delete(`/blacklist/clear/${type}`),
+  exportBlacklist: (type) => http.get('/blacklist/export', { params: { type }, responseType: 'blob' }),
+  downloadBlacklistTemplate: () => http.get('/blacklist/template', { responseType: 'blob' }),
+  importBlacklist: (data) => http.post('/blacklist/import', { data }),
   
   // 扫描任务相关
   getScanTasks: (params) => http.get('/scan/tasks', { params }),
