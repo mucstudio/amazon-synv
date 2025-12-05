@@ -382,34 +382,41 @@ export class Scraper {
    * 提取卖家名称 (Sold by)
    */
   extractSellerName(html) {
-    // 方法1: 从 tabular-buybox 区域的 "Sold by" 提取
-    const soldByMatch = html.match(/offer-display-feature-name="desktop-seller-info"[\s\S]*?<span[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]+)<\/span>/i);
+    // 方法1: 从 sellerProfileTriggerId 提取（最可靠，直接包含卖家名称）
+    const sellerProfileMatch = html.match(/id=['"]sellerProfileTriggerId['"][^>]*>([^<]+)<\/a>/i);
+    if (sellerProfileMatch) {
+      return sellerProfileMatch[1].trim();
+    }
+    
+    // 方法2: 从 desktop-seller-info 区域的链接提取
+    // 匹配 data-csa-c-content-id="odf-desktop-merchant-info" 后面的 offer-display-feature-text-message
+    const merchantInfoMatch = html.match(/data-csa-c-content-id="odf-desktop-merchant-info"[^>]*>[\s\S]*?<span[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]+)<\/span>/i);
+    if (merchantInfoMatch) {
+      return merchantInfoMatch[1].trim();
+    }
+    
+    // 方法3: 从 "Sold by" 标签后的链接提取
+    const soldByMatch = html.match(/<span[^>]*>Sold by<\/span>[\s\S]*?<a[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]+)<\/a>/i);
     if (soldByMatch) {
       return soldByMatch[1].trim();
     }
     
-    // 方法2: 从 merchant-info 区域提取
+    // 方法4: 从 merchant-info 区域提取
     const merchantMatch = html.match(/id="merchant-info"[^>]*>[\s\S]*?Sold by\s*<a[^>]*>([^<]+)<\/a>/i);
     if (merchantMatch) {
       return merchantMatch[1].trim();
     }
     
-    // 方法3: 从 "Ships from and sold by" 提取
+    // 方法5: 从 "Ships from and sold by" 提取
     const shipsAndSoldMatch = html.match(/Ships from and sold by\s*<a[^>]*>([^<]+)<\/a>/i);
     if (shipsAndSoldMatch) {
       return shipsAndSoldMatch[1].trim();
     }
     
-    // 方法4: 从 bylineInfo 区域提取（品牌/卖家）
+    // 方法6: 从 bylineInfo 区域提取（品牌/卖家）
     const bylineMatch = html.match(/id="bylineInfo"[^>]*>[\s\S]*?Visit the\s*([^<]+)\s*Store/i);
     if (bylineMatch) {
       return bylineMatch[1].trim();
-    }
-    
-    // 方法5: 从 sellerProfileTriggerId 提取
-    const sellerProfileMatch = html.match(/id="sellerProfileTriggerId"[^>]*>([^<]+)<\/a>/i);
-    if (sellerProfileMatch) {
-      return sellerProfileMatch[1].trim();
     }
     
     return '';
@@ -774,21 +781,68 @@ export class Scraper {
 
   extractImages(html) {
     const images = [];
-    const match = html.match(/'colorImages':\s*{\s*'initial':\s*(\[[^\]]+\])/);
-    if (match) {
+    
+    // 方法1: 从 colorImages JSON 提取（最完整）
+    const colorImagesMatch = html.match(/'colorImages'\s*:\s*\{\s*'initial'\s*:\s*(\[[\s\S]*?\])\s*\}/);
+    if (colorImagesMatch) {
       try {
-        const data = JSON.parse(match[1].replace(/'/g, '"'));
+        // 处理 JSON 中的单引号
+        let jsonStr = colorImagesMatch[1]
+          .replace(/'/g, '"')
+          .replace(/(\w+):/g, '"$1":'); // 处理无引号的 key
+        const data = JSON.parse(jsonStr);
         data.forEach(item => {
           if (item.hiRes) images.push(item.hiRes);
           else if (item.large) images.push(item.large);
+          else if (item.main && item.main.default) images.push(item.main.default);
         });
-      } catch (e) {}
+      } catch (e) {
+        // JSON 解析失败，尝试用正则提取 URL
+        const urlMatches = colorImagesMatch[1].matchAll(/"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/g);
+        for (const m of urlMatches) {
+          if (!images.includes(m[1])) images.push(m[1]);
+        }
+      }
     }
+    
+    // 方法2: 从 imageGalleryData 提取
     if (images.length === 0) {
-      const imgMatch = html.match(/<img[^>]*id="landingImage"[^>]*src="([^"]+)"/);
-      if (imgMatch) images.push(imgMatch[1]);
+      const galleryMatch = html.match(/imageGalleryData'\s*:\s*(\[[\s\S]*?\])/);
+      if (galleryMatch) {
+        const urlMatches = galleryMatch[1].matchAll(/"(https:\/\/[^"]+\.(?:jpg|png|webp)[^"]*)"/gi);
+        for (const m of urlMatches) {
+          if (!images.includes(m[1]) && m[1].includes('media-amazon.com')) {
+            images.push(m[1]);
+          }
+        }
+      }
     }
-    return images.slice(0, 10);
+    
+    // 方法3: 从 landingImage 提取主图
+    if (images.length === 0) {
+      const landingMatch = html.match(/id="landingImage"[^>]*(?:src|data-old-hires|data-a-dynamic-image)="([^"]+)"/);
+      if (landingMatch) {
+        let imgUrl = landingMatch[1];
+        // 如果是 data-a-dynamic-image，解析 JSON 获取最大图
+        if (imgUrl.startsWith('{')) {
+          try {
+            const imgData = JSON.parse(imgUrl.replace(/&quot;/g, '"'));
+            const urls = Object.keys(imgData);
+            if (urls.length > 0) imgUrl = urls[0];
+          } catch (e) {}
+        }
+        if (imgUrl.startsWith('http')) images.push(imgUrl);
+      }
+    }
+    
+    // 方法4: 从 imgTagWrapperId 区域提取
+    if (images.length === 0) {
+      const imgTagMatch = html.match(/id="imgTagWrapperId"[\s\S]*?<img[^>]*src="(https:\/\/[^"]+)"/);
+      if (imgTagMatch) images.push(imgTagMatch[1]);
+    }
+    
+    // 去重并限制数量
+    return [...new Set(images)].slice(0, 10);
   }
 
   extractBullets(html) {

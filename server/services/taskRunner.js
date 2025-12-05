@@ -120,8 +120,29 @@ export class TaskRunner {
         if (data.success) {
           const product = data.product;
           db.prepare(`
-            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')
+            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', CURRENT_TIMESTAMP)
+            ON CONFLICT(asin) DO UPDATE SET
+              taskId = excluded.taskId,
+              title = excluded.title,
+              price = excluded.price,
+              shippingFee = excluded.shippingFee,
+              totalPrice = excluded.totalPrice,
+              rating = excluded.rating,
+              reviewCount = excluded.reviewCount,
+              image = excluded.image,
+              images = excluded.images,
+              bulletPoints = excluded.bulletPoints,
+              description = excluded.description,
+              deliveryInfo = excluded.deliveryInfo,
+              deliveryDays = excluded.deliveryDays,
+              fulfillmentType = excluded.fulfillmentType,
+              stock = excluded.stock,
+              sellerName = excluded.sellerName,
+              url = excluded.url,
+              status = 'success',
+              errorMsg = NULL,
+              updatedAt = CURRENT_TIMESTAMP
           `).run(
             task.id,
             product.asin || data.asin,
@@ -138,8 +159,8 @@ export class TaskRunner {
             product.deliveryInfo,
             product.deliveryDays,
             product.fulfillmentType || '',
-            product.sellerName || '',
             product.stock,
+            product.sellerName || '',
             product.url
           );
           successCount++;
@@ -161,8 +182,14 @@ export class TaskRunner {
           
           // 记录失败的 ASIN 到数据库（包含标题）
           db.prepare(`
-            INSERT INTO products (taskId, asin, title, status, errorMsg)
-            VALUES (?, ?, ?, 'failed', ?)
+            INSERT INTO products (taskId, asin, title, status, errorMsg, updatedAt)
+            VALUES (?, ?, ?, 'failed', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(asin) DO UPDATE SET
+              taskId = excluded.taskId,
+              title = excluded.title,
+              status = 'failed',
+              errorMsg = excluded.errorMsg,
+              updatedAt = CURRENT_TIMESTAMP
           `).run(task.id, data.asin, errorTitle, data.error);
           
           // 记录不同错误类型

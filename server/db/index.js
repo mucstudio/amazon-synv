@@ -32,7 +32,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       taskId INTEGER,
-      asin TEXT NOT NULL,
+      asin TEXT NOT NULL UNIQUE,
       title TEXT,
       price TEXT,
       shippingFee TEXT,
@@ -50,6 +50,7 @@ export async function initDb() {
       status TEXT DEFAULT 'success',
       errorMsg TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (taskId) REFERENCES tasks(id)
     );
 
@@ -174,6 +175,29 @@ export async function initDb() {
     if (!columnNames.includes('sellerName')) {
       db.exec("ALTER TABLE products ADD COLUMN sellerName TEXT");
       console.log('已添加 sellerName 列');
+    }
+    if (!columnNames.includes('updatedAt')) {
+      db.exec("ALTER TABLE products ADD COLUMN updatedAt DATETIME");
+      db.exec("UPDATE products SET updatedAt = createdAt WHERE updatedAt IS NULL");
+      console.log('已添加 updatedAt 列');
+    }
+    
+    // 检查 asin 是否有唯一索引，如果没有则创建
+    const indexes = db.prepare("PRAGMA index_list(products)").all();
+    const hasUniqueAsin = indexes.some(idx => {
+      if (!idx.unique) return false;
+      const cols = db.prepare(`PRAGMA index_info(${idx.name})`).all();
+      return cols.length === 1 && cols[0].name === 'asin';
+    });
+    if (!hasUniqueAsin) {
+      // 先删除重复的 asin，保留最新的记录
+      db.exec(`
+        DELETE FROM products WHERE id NOT IN (
+          SELECT MAX(id) FROM products GROUP BY asin
+        )
+      `);
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_asin_unique ON products(asin)");
+      console.log('已为 asin 添加唯一约束');
     }
     
     // 迁移 proxies 表
