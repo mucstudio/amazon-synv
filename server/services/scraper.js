@@ -356,6 +356,7 @@ export class Scraper {
     const deliveryInfo = this.extractDelivery(html);
     const deliveryDays = this.calculateDeliveryDays(html);
     const stock = this.extractStock(html);
+    const sellerName = this.extractSellerName(html);
     
     return {
       asin,
@@ -373,7 +374,45 @@ export class Scraper {
       deliveryDays,
       fulfillmentType: this.extractFulfillmentType(html),
       stock,
+      sellerName,
     };
+  }
+
+  /**
+   * 提取卖家名称 (Sold by)
+   */
+  extractSellerName(html) {
+    // 方法1: 从 tabular-buybox 区域的 "Sold by" 提取
+    const soldByMatch = html.match(/offer-display-feature-name="desktop-seller-info"[\s\S]*?<span[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]+)<\/span>/i);
+    if (soldByMatch) {
+      return soldByMatch[1].trim();
+    }
+    
+    // 方法2: 从 merchant-info 区域提取
+    const merchantMatch = html.match(/id="merchant-info"[^>]*>[\s\S]*?Sold by\s*<a[^>]*>([^<]+)<\/a>/i);
+    if (merchantMatch) {
+      return merchantMatch[1].trim();
+    }
+    
+    // 方法3: 从 "Ships from and sold by" 提取
+    const shipsAndSoldMatch = html.match(/Ships from and sold by\s*<a[^>]*>([^<]+)<\/a>/i);
+    if (shipsAndSoldMatch) {
+      return shipsAndSoldMatch[1].trim();
+    }
+    
+    // 方法4: 从 bylineInfo 区域提取（品牌/卖家）
+    const bylineMatch = html.match(/id="bylineInfo"[^>]*>[\s\S]*?Visit the\s*([^<]+)\s*Store/i);
+    if (bylineMatch) {
+      return bylineMatch[1].trim();
+    }
+    
+    // 方法5: 从 sellerProfileTriggerId 提取
+    const sellerProfileMatch = html.match(/id="sellerProfileTriggerId"[^>]*>([^<]+)<\/a>/i);
+    if (sellerProfileMatch) {
+      return sellerProfileMatch[1].trim();
+    }
+    
+    return '';
   }
 
   /**

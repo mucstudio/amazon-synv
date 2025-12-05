@@ -8,7 +8,9 @@ import productsRouter from './routes/products.js';
 import proxiesRouter from './routes/proxies.js';
 import settingsRouter from './routes/settings.js';
 import blacklistRouter from './routes/blacklist.js';
+import scanRouter from './routes/scan.js';
 import { TaskRunner } from './services/taskRunner.js';
+import { ScanRunner } from './services/scanRunner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,6 +29,7 @@ app.use('/api/products', productsRouter);
 app.use('/api/proxies', proxiesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/blacklist', blacklistRouter);
+app.use('/api/scan', scanRouter);
 
 // 状态接口
 app.get('/api/status', (req, res) => {
@@ -50,11 +53,21 @@ app.get('*', (req, res) => {
 
 // 启动服务
 async function start() {
-  await initDb();
+  const db = await initDb();
+  
+  // 将之前运行中的任务标记为中断（服务器重启导致）
+  const interruptedCount = db.prepare("UPDATE tasks SET status = 'interrupted' WHERE status = 'running'").run().changes;
+  if (interruptedCount > 0) {
+    console.log(`已将 ${interruptedCount} 个运行中的任务标记为中断`);
+  }
   
   // 启动任务运行器
   const taskRunner = new TaskRunner();
   taskRunner.start();
+
+  // 启动扫描任务运行器
+  const scanRunner = new ScanRunner();
+  scanRunner.start();
 
   app.listen(PORT, () => {
     console.log(`\n========== Amazon Scraper v2 ==========`);

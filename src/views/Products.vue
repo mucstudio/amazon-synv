@@ -83,6 +83,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
+        <el-table-column prop="sellerName" label="卖家" width="120" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="爬取时间" width="170" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
@@ -130,6 +131,7 @@
           <el-tag v-else-if="currentProduct.stock > 0" :type="currentProduct.stock <= 5 ? 'warning' : 'success'">{{ currentProduct.stock }} 件</el-tag>
           <span v-else>未知</span>
         </el-descriptions-item>
+        <el-descriptions-item label="卖家" :span="2">{{ currentProduct.sellerName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="标题" :span="2">{{ currentProduct.title }}</el-descriptions-item>
         <el-descriptions-item label="送达信息">{{ currentProduct.deliveryInfo }}</el-descriptions-item>
         <el-descriptions-item label="预估天数">

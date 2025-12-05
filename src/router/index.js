@@ -36,6 +36,12 @@ const routes = [
     meta: { title: '黑名单词库', icon: 'Warning' },
   },
   {
+    path: '/scan',
+    name: 'ScanTasks',
+    component: () => import('../views/ScanTasks.vue'),
+    meta: { title: '黑名单扫描', icon: 'Search' },
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/Settings.vue'),

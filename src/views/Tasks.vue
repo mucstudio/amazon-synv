@@ -50,8 +50,8 @@
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 'running'" size="small" link type="warning" @click="cancelTask(row.id)">取消</el-button>
-            <el-button v-if="row.status === 'cancelled' || (row.status === 'running' && row.progress > 0)" size="small" link type="success" @click="resumeTask(row.id)">继续</el-button>
-            <el-button v-if="row.status === 'failed' || row.status === 'completed' || row.status === 'cancelled'" size="small" link type="primary" @click="retryTask(row.id)">重试</el-button>
+            <el-button v-if="row.status === 'cancelled' || row.status === 'interrupted'" size="small" link type="success" @click="resumeTask(row.id)">继续</el-button>
+            <el-button v-if="row.status === 'failed' || row.status === 'completed' || row.status === 'cancelled' || row.status === 'interrupted'" size="small" link type="primary" @click="retryTask(row.id)">重试</el-button>
             <el-button size="small" link type="danger" @click="deleteTask(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -119,8 +119,8 @@ const resultLoading = ref(false);
 const resultType = ref('success');
 const currentTaskId = ref(null);
 
-const statusType = (s) => ({ pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: 'info' }[s] || 'info');
-const statusText = (s) => ({ pending: '等待中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已取消' }[s] || s);
+const statusType = (s) => ({ pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: 'info', interrupted: 'warning' }[s] || 'info');
+const statusText = (s) => ({ pending: '等待中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断' }[s] || s);
 
 const formatError = (err) => {
   const errorMap = {

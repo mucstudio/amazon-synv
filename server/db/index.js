@@ -84,6 +84,41 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_blacklist_type ON blacklist(type);
     CREATE INDEX IF NOT EXISTS idx_blacklist_keyword ON blacklist(keyword);
+
+    CREATE TABLE IF NOT EXISTS scan_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      progress INTEGER DEFAULT 0,
+      totalProducts INTEGER DEFAULT 0,
+      scannedCount INTEGER DEFAULT 0,
+      matchedCount INTEGER DEFAULT 0,
+      productScope TEXT,
+      errorMsg TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completedAt DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS scan_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scanTaskId INTEGER NOT NULL,
+      asin TEXT NOT NULL,
+      title TEXT,
+      totalPrice TEXT,
+      stock INTEGER,
+      deliveryDays INTEGER,
+      sellerName TEXT,
+      matchedSeller TEXT,
+      matchedTro TEXT,
+      matchedBrand TEXT,
+      matchedProduct TEXT,
+      hasViolation INTEGER DEFAULT 0,
+      FOREIGN KEY (scanTaskId) REFERENCES scan_tasks(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scan_tasks_status ON scan_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_scan_results_taskId ON scan_results(scanTaskId);
+    CREATE INDEX IF NOT EXISTS idx_scan_results_violation ON scan_results(scanTaskId, hasViolation);
   `);
 
   // 默认设置
@@ -135,6 +170,10 @@ export async function initDb() {
     if (!columnNames.includes('stock')) {
       db.exec("ALTER TABLE products ADD COLUMN stock INTEGER");
       console.log('已添加 stock 列');
+    }
+    if (!columnNames.includes('sellerName')) {
+      db.exec("ALTER TABLE products ADD COLUMN sellerName TEXT");
+      console.log('已添加 sellerName 列');
     }
     
     // 迁移 proxies 表

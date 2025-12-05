@@ -53,4 +53,13 @@ export default {
   deleteBlacklist: (id) => http.delete(`/blacklist/${id}`),
   batchDeleteBlacklist: (ids) => http.post('/blacklist/batch-delete', { ids }),
   clearBlacklist: (type) => http.delete(`/blacklist/clear/${type}`),
+  
+  // 扫描任务相关
+  getScanTasks: (params) => http.get('/scan/tasks', { params }),
+  createScanTask: (data) => http.post('/scan/tasks', data),
+  getScanTask: (id) => http.get(`/scan/tasks/${id}`),
+  deleteScanTask: (id) => http.delete(`/scan/tasks/${id}`),
+  getScanResults: (id, params) => http.get(`/scan/tasks/${id}/results`, { params }),
+  downloadScanResults: (id, filter) => http.get(`/scan/tasks/${id}/download`, { params: { filter }, responseType: 'blob' }),
+  getScanStats: () => http.get('/scan/stats'),
 };

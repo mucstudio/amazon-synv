@@ -120,8 +120,8 @@ export class TaskRunner {
         if (data.success) {
           const product = data.product;
           db.prepare(`
-            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, deliveryInfo, deliveryDays, fulfillmentType, stock, url, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')
+            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')
           `).run(
             task.id,
             product.asin || data.asin,
@@ -138,6 +138,7 @@ export class TaskRunner {
             product.deliveryInfo,
             product.deliveryDays,
             product.fulfillmentType || '',
+            product.sellerName || '',
             product.stock,
             product.url
           );
