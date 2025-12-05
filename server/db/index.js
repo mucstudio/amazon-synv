@@ -181,6 +181,10 @@ export async function initDb() {
       db.exec("UPDATE products SET updatedAt = createdAt WHERE updatedAt IS NULL");
       console.log('已添加 updatedAt 列');
     }
+    if (!columnNames.includes('attributes')) {
+      db.exec("ALTER TABLE products ADD COLUMN attributes TEXT");
+      console.log('已添加 attributes 列');
+    }
     
     // 检查 asin 是否有唯一索引，如果没有则创建
     const indexes = db.prepare("PRAGMA index_list(products)").all();

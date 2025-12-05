@@ -349,6 +349,24 @@ export class Scraper {
     console.log(`代理失败: ${proxyUrl.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@')}`);
   }
 
+  /**
+   * 解码 HTML 实体
+   */
+  decodeHtmlEntities(text) {
+    if (!text) return '';
+    return text
+      .replace(/&#34;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+  }
+
   parseProduct(html, url, asin) {
     const price = this.extractPrice(html);
     const shippingFee = this.extractShippingFee(html);
@@ -361,21 +379,98 @@ export class Scraper {
     return {
       asin,
       url,
-      title: this.extract(html, /<span id="productTitle"[^>]*>([^<]+)<\/span>/),
+      title: this.decodeHtmlEntities(this.extract(html, /<span id="productTitle"[^>]*>([^<]+)<\/span>/)),
       price,
       shippingFee,
       totalPrice,
       rating: this.extract(html, /<span class="a-icon-alt">([0-9.]+) out of 5/),
       reviewCount: this.extract(html, /<span id="acrCustomerReviewText"[^>]*>([^<]+)<\/span>/),
       images: this.extractImages(html),
-      bulletPoints: this.extractBullets(html),
-      description: this.extractDescription(html),
+      bulletPoints: this.extractBullets(html).map(b => this.decodeHtmlEntities(b)),
+      description: this.decodeHtmlEntities(this.extractDescription(html)),
+      attributes: this.extractAttributes(html),
       deliveryInfo,
       deliveryDays,
       fulfillmentType: this.extractFulfillmentType(html),
       stock,
       sellerName,
     };
+  }
+
+  /**
+   * 提取商品属性（品牌、尺寸、重量、材质等）
+   */
+  extractAttributes(html) {
+    const attributes = {};
+    
+    // 方法1: 从 productDetails_techSpec_section 表格提取（新版页面）
+    const techSpecMatch = html.match(/<table[^>]*id="productDetails_techSpec_section[^"]*"[^>]*class="[^"]*prodDetTable[^"]*"[^>]*>([\s\S]*?)<\/table>/i);
+    if (techSpecMatch) {
+      const rows = techSpecMatch[1].matchAll(/<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi);
+      for (const row of rows) {
+        const key = this.cleanAttributeText(row[1]);
+        const value = this.cleanAttributeText(row[2]);
+        if (key && value) {
+          attributes[key] = value;
+        }
+      }
+    }
+    
+    // 方法2: 从 productDetails_detailBullets_sections 表格提取
+    const detailBulletsTableMatch = html.match(/<table[^>]*id="productDetails_detailBullets_sections[^"]*"[^>]*>([\s\S]*?)<\/table>/i);
+    if (detailBulletsTableMatch) {
+      const rows = detailBulletsTableMatch[1].matchAll(/<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi);
+      for (const row of rows) {
+        const key = this.cleanAttributeText(row[1]);
+        const value = this.cleanAttributeText(row[2]);
+        if (key && value && !attributes[key]) {
+          attributes[key] = value;
+        }
+      }
+    }
+    
+    // 方法3: 从 detailBullets_feature_div 列表提取（旧版页面）
+    const detailBulletsMatch = html.match(/<div[^>]*id="detailBullets_feature_div"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i);
+    if (detailBulletsMatch) {
+      const items = detailBulletsMatch[1].matchAll(/<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([^<:]+)\s*:?\s*<\/span>[\s\S]*?<span[^>]*>([^<]+)<\/span>/gi);
+      for (const item of items) {
+        const key = this.cleanAttributeText(item[1]);
+        const value = this.cleanAttributeText(item[2]);
+        if (key && value && !attributes[key] && !key.includes('Customer Reviews')) {
+          attributes[key] = value;
+        }
+      }
+    }
+    
+    // 方法4: 从 detail-bullet-list 提取
+    const bulletListMatch = html.match(/<ul[^>]*class="[^"]*detail-bullet-list[^"]*"[^>]*>([\s\S]*?)<\/ul>/i);
+    if (bulletListMatch) {
+      const items = bulletListMatch[1].matchAll(/<li[^>]*>[\s\S]*?<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([^<:]+)\s*:?\s*<\/span>[\s\S]*?(?:<span[^>]*>)?([^<]+)/gi);
+      for (const item of items) {
+        const key = this.cleanAttributeText(item[1]);
+        const value = this.cleanAttributeText(item[2]);
+        if (key && value && !attributes[key] && !key.includes('Customer Reviews')) {
+          attributes[key] = value;
+        }
+      }
+    }
+    
+    return attributes;
+  }
+
+  /**
+   * 清理属性文本
+   */
+  cleanAttributeText(text) {
+    if (!text) return '';
+    return this.decodeHtmlEntities(
+      text
+        .replace(/<[^>]+>/g, '')  // 移除 HTML 标签
+        .replace(/&lrm;/g, '')    // 移除左到右标记
+        .replace(/&rlm;/g, '')    // 移除右到左标记
+        .replace(/\s+/g, ' ')     // 合并空白
+        .trim()
+    );
   }
 
   /**
@@ -782,25 +877,24 @@ export class Scraper {
   extractImages(html) {
     const images = [];
     
-    // 方法1: 从 colorImages JSON 提取（最完整）
-    const colorImagesMatch = html.match(/'colorImages'\s*:\s*\{\s*'initial'\s*:\s*(\[[\s\S]*?\])\s*\}/);
+    // 方法1: 从 colorImages JSON 提取 hiRes 图片（最完整）
+    const colorImagesMatch = html.match(/'colorImages'\s*:\s*\{\s*'initial'\s*:\s*\[/);
     if (colorImagesMatch) {
-      try {
-        // 处理 JSON 中的单引号
-        let jsonStr = colorImagesMatch[1]
-          .replace(/'/g, '"')
-          .replace(/(\w+):/g, '"$1":'); // 处理无引号的 key
-        const data = JSON.parse(jsonStr);
-        data.forEach(item => {
-          if (item.hiRes) images.push(item.hiRes);
-          else if (item.large) images.push(item.large);
-          else if (item.main && item.main.default) images.push(item.main.default);
-        });
-      } catch (e) {
-        // JSON 解析失败，尝试用正则提取 URL
-        const urlMatches = colorImagesMatch[1].matchAll(/"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/g);
-        for (const m of urlMatches) {
-          if (!images.includes(m[1])) images.push(m[1]);
+      // 直接用正则提取所有 hiRes URL
+      const hiResMatches = html.matchAll(/"hiRes"\s*:\s*"(https:\/\/[^"]+)"/g);
+      for (const m of hiResMatches) {
+        if (!images.includes(m[1])) {
+          images.push(m[1]);
+        }
+      }
+      
+      // 如果没有 hiRes，提取 large
+      if (images.length === 0) {
+        const largeMatches = html.matchAll(/"large"\s*:\s*"(https:\/\/[^"]+)"/g);
+        for (const m of largeMatches) {
+          if (!images.includes(m[1])) {
+            images.push(m[1]);
+          }
         }
       }
     }
@@ -869,11 +963,117 @@ export class Scraper {
     return bullets.slice(0, 10);
   }
 
-  extractDescription(html) {
-    const match = html.match(/<div id="productDescription"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/);
-    if (match) {
-      return match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 2000);
+  /**
+   * 清理提取的文本内容
+   */
+  cleanExtractedText(text) {
+    if (!text) return '';
+    return text
+      // 移除 style 标签
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      // 移除 script 标签
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      // 移除 CSS 代码块
+      .replace(/#[a-zA-Z_][\w_-]*\s*\{[^}]*\}/g, '')
+      .replace(/\.[a-zA-Z_][\w_-]*\s*\{[^}]*\}/g, '')
+      // 移除 HTML 标签
+      .replace(/<[^>]+>/g, ' ')
+      // 移除 JavaScript 代码片段
+      .replace(/if\s*\([^)]*\)\s*\{[^}]*\}/g, '')
+      .replace(/window\.[a-zA-Z]+/g, '')
+      .replace(/function\s*\([^)]*\)/g, '')
+      // 移除残留的 CSS 属性
+      .replace(/[a-z-]+\s*:\s*[^;]+;/gi, '')
+      // 清理多余空白
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * 验证描述是否有效（不是推荐商品或其他无效内容）
+   */
+  isValidDescription(text) {
+    if (!text || text.length < 30) return false;
+    
+    // 排除推荐商品信息的特征
+    const invalidPatterns = [
+      /Shop the Store/i,
+      /out of 5 stars/i,
+      /\$\s*\d+\s*\.\s*\d+/,  // 价格格式
+      /Typical:\s*\$/i,
+      /List:\s*\$/i,
+      /Next page/i,
+      /P\.when\(/,
+      /window\./,
+      /celwidget/i,
+      /data-csa-c/i,
+      /To calculate the overall star rating/i,
+      /reviewer bought/i,
+      /star rating/i,
+    ];
+    
+    for (const pattern of invalidPatterns) {
+      if (pattern.test(text)) return false;
     }
+    
+    return true;
+  }
+
+  extractDescription(html) {
+    // 方法1: 从 pqv-description 区域提取（Product Quick View 描述，最精确）
+    const pqvMatch = html.match(/<div[^>]*id="pqv-description"[^>]*>[\s\S]*?<div>\s*([\s\S]*?)\s*<\/div>\s*<\/div>/i);
+    if (pqvMatch) {
+      const desc = this.cleanExtractedText(pqvMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
+    // 方法2: 从 productDescription 内的 p 标签提取
+    const descPMatch = html.match(/<div[^>]*id="productDescription"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
+    if (descPMatch) {
+      const desc = this.cleanExtractedText(descPMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
+    // 方法3: 从 productDescription_feature_div 的第一个 p 标签提取
+    const featurePMatch = html.match(/<div[^>]*id="productDescription_feature_div"[^>]*>[\s\S]*?<div[^>]*class="[^"]*a-section[^"]*"[^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/i);
+    if (featurePMatch) {
+      const desc = this.cleanExtractedText(featurePMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
+    // 方法4: 从 aplus_feature_div 提取 A+ 内容
+    const aplusMatch = html.match(/<div[^>]*id="aplus_feature_div"[^>]*>([\s\S]*?)<div[^>]*id="[^"]*_feature_div"/i);
+    if (aplusMatch) {
+      const desc = this.cleanExtractedText(aplusMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
+    // 方法5: 从 bookDescription 提取（书籍类）
+    const bookDescMatch = html.match(/<div[^>]*id="bookDescription_feature_div"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i);
+    if (bookDescMatch) {
+      const desc = this.cleanExtractedText(bookDescMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
+    // 方法6: 从 detailBullets_feature_div 提取（某些产品的描述在这里）
+    const detailBulletsMatch = html.match(/<div[^>]*id="detailBullets_feature_div"[^>]*>([\s\S]*?)<\/div>/i);
+    if (detailBulletsMatch) {
+      const desc = this.cleanExtractedText(detailBulletsMatch[1]);
+      if (this.isValidDescription(desc)) {
+        return desc.substring(0, 2000);
+      }
+    }
+    
     return '';
   }
 

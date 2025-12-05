@@ -120,8 +120,8 @@ export class TaskRunner {
         if (data.success) {
           const product = data.product;
           db.prepare(`
-            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', CURRENT_TIMESTAMP)
+            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, attributes, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', CURRENT_TIMESTAMP)
             ON CONFLICT(asin) DO UPDATE SET
               taskId = excluded.taskId,
               title = excluded.title,
@@ -134,6 +134,7 @@ export class TaskRunner {
               images = excluded.images,
               bulletPoints = excluded.bulletPoints,
               description = excluded.description,
+              attributes = excluded.attributes,
               deliveryInfo = excluded.deliveryInfo,
               deliveryDays = excluded.deliveryDays,
               fulfillmentType = excluded.fulfillmentType,
@@ -156,6 +157,7 @@ export class TaskRunner {
             JSON.stringify(product.images || []),
             JSON.stringify(product.bulletPoints || []),
             product.description,
+            JSON.stringify(product.attributes || {}),
             product.deliveryInfo,
             product.deliveryDays,
             product.fulfillmentType || '',

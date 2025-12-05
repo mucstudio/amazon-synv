@@ -148,7 +148,7 @@
         <el-descriptions-item label="商品描述" :span="2">
           <div style="max-height: 200px; overflow-y: auto;">{{ currentProduct.description }}</div>
         </el-descriptions-item>
-        <el-descriptions-item label="图片" :span="2">
+        <el-descriptions-item label="图片预览" :span="2">
           <div class="image-list">
             <el-image 
               v-for="(img, i) in parseImages(currentProduct.images)" 
@@ -159,6 +159,21 @@
               style="width: 80px; height: 80px; margin-right: 8px;"
             />
           </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="高清图链接" :span="2" v-if="getHdImages(currentProduct.images).length > 0">
+          <div class="hd-image-links">
+            <div v-for="(img, i) in getHdImages(currentProduct.images)" :key="i" class="hd-link-item">
+              <span class="hd-link-index">{{ i + 1 }}.</span>
+              <a :href="img" target="_blank" class="hd-link">{{ img }}</a>
+              <el-button size="small" link type="primary" @click="copyToClipboard(img)">复制</el-button>
+            </div>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="商品属性" :span="2" v-if="hasAttributes(currentProduct.attributes)">
+          <el-table :data="parseAttributesTable(currentProduct.attributes)" size="small" border style="width: 100%">
+            <el-table-column prop="key" label="属性名" width="180" />
+            <el-table-column prop="value" label="属性值" />
+          </el-table>
         </el-descriptions-item>
       </el-descriptions>
     </el-dialog>
@@ -189,6 +204,44 @@ const parseBullets = (str) => {
 const parseImages = (str) => {
   if (!str) return [];
   try { return JSON.parse(str); } catch { return []; }
+};
+
+const parseAttributes = (str) => {
+  if (!str) return {};
+  try { return JSON.parse(str); } catch { return {}; }
+};
+
+const hasAttributes = (str) => {
+  const attrs = parseAttributes(str);
+  return Object.keys(attrs).length > 0;
+};
+
+const parseAttributesTable = (str) => {
+  const attrs = parseAttributes(str);
+  return Object.entries(attrs).map(([key, value]) => ({ key, value }));
+};
+
+// 将图片 URL 转换为高清图链接（去掉尺寸参数）
+const toHdImage = (url) => {
+  if (!url) return '';
+  // 匹配 Amazon 图片 URL 中的尺寸参数，如 ._AC_SL1400_. 或 ._SX300_. 等
+  return url.replace(/\._[A-Z0-9_,]+_\./, '.');
+};
+
+// 获取所有高清图链接
+const getHdImages = (str) => {
+  const images = parseImages(str);
+  return images.map(img => toHdImage(img)).filter(img => img);
+};
+
+// 复制到剪贴板
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage.success('已复制到剪贴板');
+  } catch (e) {
+    ElMessage.error('复制失败');
+  }
 };
 
 const handleSelectionChange = (selection) => {
@@ -289,4 +342,9 @@ onMounted(() => { loadProducts(); loadTasks(); });
 .asin-link { color: #409eff; text-decoration: none; }
 .asin-link:hover { text-decoration: underline; }
 .image-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.hd-image-links { max-height: 150px; overflow-y: auto; }
+.hd-link-item { display: flex; align-items: center; margin-bottom: 4px; gap: 8px; }
+.hd-link-index { color: #909399; min-width: 20px; }
+.hd-link { color: #409eff; text-decoration: none; word-break: break-all; flex: 1; font-size: 12px; }
+.hd-link:hover { text-decoration: underline; }
 </style>
