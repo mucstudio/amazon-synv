@@ -39,6 +39,8 @@ export default {
   // 设置相关
   getSettings: () => http.get('/settings'),
   updateSettings: (data) => http.put('/settings', data),
+  exportBackup: (options) => http.post('/settings/backup', { options }),
+  importBackup: (data) => http.post('/settings/restore', data),
   
   // 统计
   getStats: () => http.get('/stats'),

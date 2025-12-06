@@ -414,7 +414,80 @@ export class Scraper {
       fulfillmentType: this.extractFulfillmentType(html),
       stock,
       sellerName,
+      returnPolicy: this.extractReturnPolicy(html),
     };
+  }
+
+  /**
+   * 提取退货政策
+   */
+  extractReturnPolicy(html) {
+    // 方法1: 从 span 标签内提取包含 refund/replacement 的文本
+    const spanRefundMatch = html.match(/<span[^>]*>([^<]*(?:FREE\s+)?refund\/replacement[^<]*)<\/span>/i);
+    if (spanRefundMatch) {
+      const text = spanRefundMatch[1].trim();
+      if (text && text.length < 100) {
+        return this.decodeHtmlEntities(text);
+      }
+    }
+    
+    // 方法2: 从 span 标签内提取 "Returnable until..." 格式
+    const returnableUntilMatch = html.match(/<span[^>]*>([^<]*Returnable\s+until[^<]*)<\/span>/i);
+    if (returnableUntilMatch) {
+      const text = returnableUntilMatch[1].trim();
+      if (text && text.length < 100) {
+        return this.decodeHtmlEntities(text);
+      }
+    }
+    
+    // 方法3: 从 desktop-returns-info 区域提取
+    const returnsSection = html.match(/data-csa-c-content-id="odf-desktop-returns-info"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i);
+    if (returnsSection) {
+      // 查找包含 refund、return、replacement、returnable 等关键词的 span
+      const returnTextMatch = returnsSection[1].match(/<span[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]*(?:refund|returnable|replacement)[^<]*)<\/span>/i);
+      if (returnTextMatch) {
+        return this.decodeHtmlEntities(returnTextMatch[1].trim());
+      }
+    }
+    
+    // 方法4: 从 Returns 标签后提取
+    const returnsLabelSection = html.match(/<span[^>]*>Returns<\/span>([\s\S]*?)<\/div>\s*<\/div>/i);
+    if (returnsLabelSection) {
+      const spans = returnsLabelSection[1].matchAll(/<span[^>]*class="[^"]*offer-display-feature-text-message[^"]*"[^>]*>([^<]+)<\/span>/gi);
+      for (const span of spans) {
+        const text = span[1].trim();
+        // 跳过看起来像卖家名的文本，匹配退货相关关键词
+        if (text.toLowerCase().includes('refund') || 
+            text.toLowerCase().includes('returnable') || 
+            text.toLowerCase().includes('replacement') ||
+            text.toLowerCase().includes('eligible')) {
+          return this.decodeHtmlEntities(text);
+        }
+      }
+    }
+    
+    // 方法5: 检查是否有 "Non-returnable" 标识（在 span 内）
+    const nonReturnMatch = html.match(/<span[^>]*>([^<]*Non-?returnable[^<]*)<\/span>/i);
+    if (nonReturnMatch) {
+      return this.decodeHtmlEntities(nonReturnMatch[1].trim());
+    }
+    
+    // 方法6: 检查是否有 "Eligible for Return"（在 span 内）
+    const eligibleMatch = html.match(/<span[^>]*>([^<]*Eligible for Return[^<]*)<\/span>/i);
+    if (eligibleMatch) {
+      return this.decodeHtmlEntities(eligibleMatch[1].trim());
+    }
+    
+    // 方法7: 通用匹配 - 查找任何包含 Returnable 的 span
+    const returnableMatch = html.match(/<span[^>]*>([^<]*Returnable[^<]*)<\/span>/i);
+    if (returnableMatch) {
+      const text = returnableMatch[1].trim();
+      if (text && text.length < 100) {
+        return this.decodeHtmlEntities(text);
+      }
+    }
+    
+    return '';
   }
 
   /**
@@ -423,6 +496,17 @@ export class Scraper {
   extractAttributes(html) {
     const attributes = {};
     
+    // 需要排除的属性名
+    const excludeKeys = ['Customer Reviews', 'Best Sellers Rank', 'ASIN'];
+    
+    const shouldInclude = (key, value) => {
+      if (!key || !value) return false;
+      if (attributes[key]) return false;  // 已存在
+      if (excludeKeys.some(e => key.includes(e))) return false;
+      if (!this.isValidAttributeValue(value)) return false;
+      return true;
+    };
+    
     // 方法1: 从 productDetails_techSpec_section 表格提取（新版页面）
     const techSpecMatch = html.match(/<table[^>]*id="productDetails_techSpec_section[^"]*"[^>]*class="[^"]*prodDetTable[^"]*"[^>]*>([\s\S]*?)<\/table>/i);
     if (techSpecMatch) {
@@ -430,7 +514,7 @@ export class Scraper {
       for (const row of rows) {
         const key = this.cleanAttributeText(row[1]);
         const value = this.cleanAttributeText(row[2]);
-        if (key && value) {
+        if (shouldInclude(key, value)) {
           attributes[key] = value;
         }
       }
@@ -443,7 +527,7 @@ export class Scraper {
       for (const row of rows) {
         const key = this.cleanAttributeText(row[1]);
         const value = this.cleanAttributeText(row[2]);
-        if (key && value && !attributes[key]) {
+        if (shouldInclude(key, value)) {
           attributes[key] = value;
         }
       }
@@ -456,7 +540,7 @@ export class Scraper {
       for (const item of items) {
         const key = this.cleanAttributeText(item[1]);
         const value = this.cleanAttributeText(item[2]);
-        if (key && value && !attributes[key] && !key.includes('Customer Reviews')) {
+        if (shouldInclude(key, value)) {
           attributes[key] = value;
         }
       }
@@ -469,7 +553,7 @@ export class Scraper {
       for (const item of items) {
         const key = this.cleanAttributeText(item[1]);
         const value = this.cleanAttributeText(item[2]);
-        if (key && value && !attributes[key] && !key.includes('Customer Reviews')) {
+        if (shouldInclude(key, value)) {
           attributes[key] = value;
         }
       }
@@ -483,14 +567,27 @@ export class Scraper {
    */
   cleanAttributeText(text) {
     if (!text) return '';
-    return this.decodeHtmlEntities(
-      text
-        .replace(/<[^>]+>/g, '')  // 移除 HTML 标签
-        .replace(/&lrm;/g, '')    // 移除左到右标记
-        .replace(/&rlm;/g, '')    // 移除右到左标记
-        .replace(/\s+/g, ' ')     // 合并空白
-        .trim()
-    );
+    
+    let cleaned = text
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')  // 移除 script 标签及内容
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')    // 移除 style 标签及内容
+      .replace(/<[^>]+>/g, '')  // 移除其他 HTML 标签
+      .replace(/&lrm;/g, '')    // 移除左到右标记
+      .replace(/&rlm;/g, '')    // 移除右到左标记
+      .replace(/\s+/g, ' ')     // 合并空白
+      .trim();
+    
+    return this.decodeHtmlEntities(cleaned);
+  }
+  
+  /**
+   * 验证属性值是否有效（过滤包含 JavaScript 代码的值）
+   */
+  isValidAttributeValue(value) {
+    if (!value) return false;
+    // 检查是否包含代码特征
+    const codePatterns = ['function(', 'P.when(', 'window.', 'var ', 'ue.count(', 'execute(', 'declarative(', '.ready)', 'dpAcr'];
+    return !codePatterns.some(p => value.includes(p));
   }
 
   /**

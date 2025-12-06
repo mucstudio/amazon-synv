@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
 // 导出商品
 router.get('/export', (req, res) => {
   const db = getDb();
-  const { keyword, taskId } = req.query;
+  const { keyword, taskId, fields } = req.query;
 
   let where = '1=1';
   const params = [];
@@ -48,20 +48,46 @@ router.get('/export', (req, res) => {
 
   const products = db.prepare(`SELECT * FROM products WHERE ${where}`).all(...params);
 
-  // 生成 CSV
-  const headers = ['ASIN', '标题', '价格', '评分', '评论数', '送达信息', '五点描述', '商品描述', '图片', '链接'];
-  const rows = products.map(p => [
-    p.asin,
-    `"${(p.title || '').replace(/"/g, '""')}"`,
-    p.price,
-    p.rating,
-    p.reviewCount,
-    `"${(p.deliveryInfo || '').replace(/"/g, '""')}"`,
-    `"${(p.bulletPoints || '').replace(/"/g, '""')}"`,
-    `"${(p.description || '').substring(0, 500).replace(/"/g, '""')}"`,
-    p.image,
-    p.url,
-  ].join(','));
+  // 字段映射配置
+  const fieldConfig = {
+    image: { label: '图片', getValue: p => p.image || '' },
+    asin: { label: 'ASIN', getValue: p => p.asin || '' },
+    title: { label: '标题', getValue: p => p.title || '' },
+    price: { label: '价格', getValue: p => p.price || '' },
+    shippingFee: { label: '运费', getValue: p => p.shippingFee || '' },
+    totalPrice: { label: '总价', getValue: p => p.totalPrice || '' },
+    rating: { label: '评分', getValue: p => p.rating || '' },
+    reviewCount: { label: '评论数', getValue: p => p.reviewCount || '' },
+    deliveryInfo: { label: '送达信息', getValue: p => p.deliveryInfo || '' },
+    deliveryDays: { label: '天数', getValue: p => p.deliveryDays != null ? p.deliveryDays : '' },
+    fulfillmentType: { label: '配送', getValue: p => p.fulfillmentType || '' },
+    stock: { label: '库存', getValue: p => p.stock != null ? (p.stock === -1 ? '有货' : (p.stock === 0 ? '缺货' : p.stock)) : '' },
+    sellerName: { label: '卖家', getValue: p => p.sellerName || '' },
+    returnPolicy: { label: '退货政策', getValue: p => p.returnPolicy || '' },
+    bulletPoints: { label: '五点描述', getValue: p => p.bulletPoints || '' },
+    description: { label: '商品描述', getValue: p => (p.description || '').substring(0, 500) },
+    attributes: { label: '商品属性', getValue: p => p.attributes || '' },
+    url: { label: '链接', getValue: p => p.url || '' },
+  };
+
+  // 解析要导出的字段
+  const selectedFields = fields ? fields.split(',').filter(f => fieldConfig[f]) : Object.keys(fieldConfig);
+  
+  // 生成 CSV 表头
+  const headers = selectedFields.map(f => fieldConfig[f].label);
+  
+  // 生成 CSV 数据行
+  const rows = products.map(p => {
+    return selectedFields.map(f => {
+      const value = fieldConfig[f].getValue(p);
+      // 如果值包含逗号、换行或双引号，需要用双引号包裹并转义
+      const strValue = String(value);
+      if (strValue.includes(',') || strValue.includes('\n') || strValue.includes('"')) {
+        return `"${strValue.replace(/"/g, '""')}"`;
+      }
+      return strValue;
+    }).join(',');
+  });
 
   const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
   

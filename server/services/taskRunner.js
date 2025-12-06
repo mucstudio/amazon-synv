@@ -120,8 +120,8 @@ export class TaskRunner {
         if (data.success) {
           const product = data.product;
           db.prepare(`
-            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, attributes, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, url, status, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', CURRENT_TIMESTAMP)
+            INSERT INTO products (taskId, asin, title, price, shippingFee, totalPrice, rating, reviewCount, image, images, bulletPoints, description, attributes, deliveryInfo, deliveryDays, fulfillmentType, stock, sellerName, returnPolicy, url, status, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', CURRENT_TIMESTAMP)
             ON CONFLICT(asin) DO UPDATE SET
               taskId = excluded.taskId,
               title = excluded.title,
@@ -140,6 +140,7 @@ export class TaskRunner {
               fulfillmentType = excluded.fulfillmentType,
               stock = excluded.stock,
               sellerName = excluded.sellerName,
+              returnPolicy = excluded.returnPolicy,
               url = excluded.url,
               status = 'success',
               errorMsg = NULL,
@@ -163,6 +164,7 @@ export class TaskRunner {
             product.fulfillmentType || '',
             product.stock,
             product.sellerName || '',
+            product.returnPolicy || '',
             product.url
           );
           successCount++;

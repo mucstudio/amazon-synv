@@ -12,11 +12,24 @@
         </el-col>
         <el-col :span="15" style="text-align: right;">
           <el-button @click="loadProducts">搜索</el-button>
-          <el-button type="success" @click="exportData">导出 CSV</el-button>
+          <el-button type="success" @click="showExportDialog">导出 CSV</el-button>
           <el-button type="warning" @click="batchDelete" :disabled="selectedIds.length === 0">
             批量删除 ({{ selectedIds.length }})
           </el-button>
           <el-button type="danger" @click="clearAll">清空全部</el-button>
+          <el-dropdown @command="handleRescrape" style="margin-left: 12px;">
+            <el-button type="primary">
+              重采 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="selected" :disabled="selectedIds.length === 0">
+                  重采勾选 ({{ selectedIds.length }})
+                </el-dropdown-item>
+                <el-dropdown-item command="all">重采全部</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </el-col>
       </el-row>
     </el-card>
@@ -85,9 +98,10 @@
         </el-table-column>
         <el-table-column prop="sellerName" label="卖家" width="120" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="爬取时间" width="170" />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="showDetail(row)">详情</el-button>
+            <el-button size="small" link type="success" @click="rescrapeOne(row.asin)">重采</el-button>
             <el-button size="small" link type="danger" @click="deleteProduct(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -175,7 +189,35 @@
             <el-table-column prop="value" label="属性值" />
           </el-table>
         </el-descriptions-item>
+        <el-descriptions-item label="退货政策" :span="2">
+          <el-tag v-if="currentProduct.returnPolicy" :type="getReturnPolicyType(currentProduct.returnPolicy)">
+            {{ currentProduct.returnPolicy }}
+          </el-tag>
+          <span v-else style="color: #909399;">未知</span>
+        </el-descriptions-item>
       </el-descriptions>
+    </el-dialog>
+
+    <!-- 导出字段选择弹窗 -->
+    <el-dialog v-model="exportDialogVisible" title="导出 CSV" width="500px">
+      <div style="margin-bottom: 12px;">
+        <el-button size="small" @click="selectAllFields">全选</el-button>
+        <el-button size="small" @click="selectDefaultFields">默认</el-button>
+        <el-button size="small" @click="clearFields">清空</el-button>
+      </div>
+      <el-checkbox-group v-model="exportFields">
+        <el-row :gutter="8">
+          <el-col :span="8" v-for="field in allExportFields" :key="field.key">
+            <el-checkbox :label="field.key" style="margin-bottom: 8px;">{{ field.label }}</el-checkbox>
+          </el-col>
+        </el-row>
+      </el-checkbox-group>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="doExport" :disabled="exportFields.length === 0">
+          导出 ({{ exportFields.length }} 个字段)
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -183,6 +225,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { ArrowDown } from '@element-plus/icons-vue';
 import api from '../api';
 
 const products = ref([]);
@@ -195,6 +238,34 @@ const taskOptions = ref([]);
 const detailVisible = ref(false);
 const currentProduct = ref(null);
 const selectedIds = ref([]);
+const selectedAsins = ref([]);
+const exportDialogVisible = ref(false);
+
+// 所有可导出字段
+const allExportFields = [
+  { key: 'image', label: '图片' },
+  { key: 'asin', label: 'ASIN' },
+  { key: 'title', label: '标题' },
+  { key: 'price', label: '价格' },
+  { key: 'shippingFee', label: '运费' },
+  { key: 'totalPrice', label: '总价' },
+  { key: 'rating', label: '评分' },
+  { key: 'reviewCount', label: '评论数' },
+  { key: 'deliveryInfo', label: '送达信息' },
+  { key: 'deliveryDays', label: '天数' },
+  { key: 'fulfillmentType', label: '配送' },
+  { key: 'stock', label: '库存' },
+  { key: 'sellerName', label: '卖家' },
+  { key: 'returnPolicy', label: '退货政策' },
+  { key: 'bulletPoints', label: '五点描述' },
+  { key: 'description', label: '商品描述' },
+  { key: 'attributes', label: '商品属性' },
+  { key: 'url', label: '链接' },
+];
+
+// 默认导出字段
+const defaultExportFields = ['image', 'asin', 'title', 'price', 'shippingFee', 'totalPrice', 'rating', 'deliveryDays', 'fulfillmentType', 'stock', 'sellerName', 'returnPolicy'];
+const exportFields = ref([...defaultExportFields]);
 
 const parseBullets = (str) => {
   if (!str) return [];
@@ -219,6 +290,19 @@ const hasAttributes = (str) => {
 const parseAttributesTable = (str) => {
   const attrs = parseAttributes(str);
   return Object.entries(attrs).map(([key, value]) => ({ key, value }));
+};
+
+// 获取退货政策标签类型
+const getReturnPolicyType = (policy) => {
+  if (!policy) return 'info';
+  const lower = policy.toLowerCase();
+  if (lower.includes('non-return') || lower.includes('non return') || lower.includes('not returnable')) {
+    return 'danger';
+  }
+  if (lower.includes('return') || lower.includes('free')) {
+    return 'success';
+  }
+  return 'info';
 };
 
 // 将图片 URL 转换为高清图链接（去掉尺寸参数）
@@ -246,6 +330,7 @@ const copyToClipboard = async (text) => {
 
 const handleSelectionChange = (selection) => {
   selectedIds.value = selection.map(item => item.id);
+  selectedAsins.value = selection.map(item => item.asin);
 };
 
 const handleSizeChange = () => {
@@ -317,9 +402,34 @@ const clearAll = async () => {
   }
 };
 
-const exportData = async () => {
+// 显示导出弹窗
+const showExportDialog = () => {
+  exportDialogVisible.value = true;
+};
+
+// 全选字段
+const selectAllFields = () => {
+  exportFields.value = allExportFields.map(f => f.key);
+};
+
+// 选择默认字段
+const selectDefaultFields = () => {
+  exportFields.value = [...defaultExportFields];
+};
+
+// 清空字段
+const clearFields = () => {
+  exportFields.value = [];
+};
+
+// 执行导出
+const doExport = async () => {
+  if (exportFields.value.length === 0) {
+    ElMessage.warning('请至少选择一个导出字段');
+    return;
+  }
   try {
-    const res = await api.exportProducts(filters.value);
+    const res = await api.exportProducts({ ...filters.value, fields: exportFields.value.join(',') });
     const url = URL.createObjectURL(res.data);
     const a = document.createElement('a');
     a.href = url;
@@ -327,8 +437,52 @@ const exportData = async () => {
     a.click();
     URL.revokeObjectURL(url);
     ElMessage.success('导出成功');
+    exportDialogVisible.value = false;
   } catch (e) {
     ElMessage.error('导出失败');
+  }
+};
+
+// 重采单个商品
+const rescrapeOne = async (asin) => {
+  await ElMessageBox.confirm(`确定重新采集商品 ${asin}？`, '重采确认', { type: 'info' });
+  try {
+    await api.createTask({ asins: [asin] });
+    ElMessage.success('已创建重采任务');
+  } catch (e) {
+    ElMessage.error('创建任务失败');
+  }
+};
+
+// 重采处理
+const handleRescrape = async (command) => {
+  if (command === 'selected') {
+    if (selectedAsins.value.length === 0) {
+      ElMessage.warning('请先选择要重采的商品');
+      return;
+    }
+    await ElMessageBox.confirm(`确定重新采集选中的 ${selectedAsins.value.length} 个商品？`, '重采确认', { type: 'info' });
+    try {
+      await api.createTask({ asins: selectedAsins.value });
+      ElMessage.success(`已创建重采任务，共 ${selectedAsins.value.length} 个商品`);
+    } catch (e) {
+      ElMessage.error('创建任务失败');
+    }
+  } else if (command === 'all') {
+    await ElMessageBox.confirm(`确定重新采集全部 ${total.value} 个商品？这可能需要较长时间。`, '重采全部', { type: 'warning' });
+    try {
+      // 获取所有商品的 ASIN
+      const res = await api.getProducts({ page: 1, pageSize: total.value, ...filters.value });
+      const allAsins = res.data.list.map(p => p.asin);
+      if (allAsins.length === 0) {
+        ElMessage.warning('没有可重采的商品');
+        return;
+      }
+      await api.createTask({ asins: allAsins });
+      ElMessage.success(`已创建重采任务，共 ${allAsins.length} 个商品`);
+    } catch (e) {
+      ElMessage.error('创建任务失败');
+    }
   }
 };
 
