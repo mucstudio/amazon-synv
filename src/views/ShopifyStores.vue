@@ -22,7 +22,7 @@
         </div>
       </template>
       
-      <el-table :data="stores" v-loading="loading" stripe>
+      <el-table :data="stores" v-loading="loading" stripe @expand-change="handleExpandChange">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="collection-panel" v-loading="row.loadingCollections">
@@ -111,6 +111,7 @@ const loadStores = async () => {
       loadingCollections: false,
       syncingCollections: false,
       collections: [],
+      collectionsLoaded: false,
     }));
   } catch (e) {
     ElMessage.error('加载失败');
@@ -147,7 +148,9 @@ const testStore = async (store) => {
   try {
     const res = await api.testShopifyStore(store.id);
     ElMessage.success(res.data.message);
-    loadStores();
+    // 更新店铺状态
+    store.status = res.data.success ? 'active' : 'failed';
+    store.apiSupported = res.data.apiSupported ? 1 : 0;
   } catch (e) {
     ElMessage.error('测试失败');
   } finally {
@@ -156,11 +159,18 @@ const testStore = async (store) => {
 };
 
 
-const toggleCollections = async (store) => {
-  if (store.collections?.length) {
-    // 已加载，不需要重新加载
-    return;
+// 展开行时自动加载集合
+const handleExpandChange = (row, expandedRows) => {
+  if (expandedRows.includes(row)) {
+    // 展开时加载集合
+    if (!row.collectionsLoaded) {
+      loadCollections(row);
+    }
   }
+};
+
+const toggleCollections = async (store) => {
+  // 手动点击时强制刷新
   await loadCollections(store);
 };
 
@@ -169,6 +179,7 @@ const loadCollections = async (store) => {
   try {
     const res = await api.getShopifyCollections(store.id);
     store.collections = (res.data.collections || []).map(c => ({ ...c, scraping: false }));
+    store.collectionsLoaded = true;
   } catch (e) {
     ElMessage.error('加载集合失败');
   } finally {
@@ -196,13 +207,28 @@ const scrapeCollection = async (store, collection) => {
   try {
     const res = await api.scrapeShopifyCollection(collection.id);
     ElMessage.success(`采集完成：共 ${res.data.saved} 个商品`);
-    // 刷新集合列表以更新商品数量
+    // 刷新集合列表以更新商品数量（不重新加载整个店铺列表）
     await loadCollections(store);
-    loadStores();
+    // 只更新当前店铺的商品数量
+    await updateStoreProductCount(store);
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '采集失败');
   } finally {
     collection.scraping = false;
+  }
+};
+
+// 更新单个店铺的商品数量（不刷新整个列表）
+const updateStoreProductCount = async (store) => {
+  try {
+    const res = await api.getShopifyStores();
+    const updatedStore = res.data.stores.find(s => s.id === store.id);
+    if (updatedStore) {
+      store.productCount = updatedStore.productCount;
+      store.lastScrapeAt = updatedStore.lastScrapeAt;
+    }
+  } catch (e) {
+    // 忽略错误
   }
 };
 
@@ -215,7 +241,8 @@ const scrapeStore = async (store) => {
   try {
     const res = await api.scrapeShopifyStore(store.id);
     ElMessage.success(`爬取完成：共 ${res.data.saved} 个商品`);
-    loadStores();
+    // 只更新当前店铺的数据
+    await updateStoreProductCount(store);
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '爬取失败');
   } finally {
