@@ -58,6 +58,7 @@ export class ShopifyScraper {
     return normalized;
   }
 
+
   /**
    * 测试店铺连接，检测是否支持 JSON API
    */
@@ -210,6 +211,7 @@ export class ShopifyScraper {
     }
   }
 
+
   /**
    * 解析 JSON 格式的商品数据
    */
@@ -218,26 +220,48 @@ export class ShopifyScraper {
 
     // 获取第一个可用变体的价格
     const firstVariant = product.variants?.[0] || {};
-    const price = firstVariant.price ? `$${firstVariant.price}` : '';
-    const comparePrice = firstVariant.compare_at_price ? `$${firstVariant.compare_at_price}` : '';
+    const price = firstVariant.price ? `${firstVariant.price}` : '';
+    const comparePrice = firstVariant.compare_at_price ? `${firstVariant.compare_at_price}` : '';
     
     // 计算总库存
     const totalInventory = product.variants?.reduce((sum, v) => {
       return sum + (v.inventory_quantity || 0);
     }, 0) || 0;
 
-    // 提取所有图片
-    const images = product.images?.map(img => img.src) || [];
+    // 提取所有图片（包含图片ID用于变体图片映射）
+    const images = product.images?.map(img => ({
+      id: img.id,
+      src: img.src,
+      position: img.position,
+      alt: img.alt || '',
+    })) || [];
+    const imageUrls = images.map(img => img.src);
 
-    // 提取变体信息
+    // 提取属性定义（options）- 用于 WooCommerce 变体同步
+    const options = product.options?.map(opt => ({
+      name: opt.name,
+      position: opt.position,
+      values: opt.values || [],
+    })) || [];
+
+    // 提取变体信息（包含完整的 option1/2/3）
     const variants = product.variants?.map(v => ({
       id: v.id,
       title: v.title,
       price: v.price,
       compareAtPrice: v.compare_at_price,
       sku: v.sku,
+      barcode: v.barcode || '',
       inventory: v.inventory_quantity,
       available: v.available,
+      option1: v.option1 || null,
+      option2: v.option2 || null,
+      option3: v.option3 || null,
+      weight: v.weight || 0,
+      weightUnit: v.weight_unit || 'kg',
+      imageId: v.image_id || null,
+      requiresShipping: v.requires_shipping,
+      taxable: v.taxable,
     })) || [];
 
     return {
@@ -248,9 +272,12 @@ export class ShopifyScraper {
       productType: product.product_type || '',
       price,
       comparePrice,
+      descriptionHtml: product.body_html || '',
       description: this.stripHtml(product.body_html || ''),
-      images: JSON.stringify(images),
-      image: images[0] || '',
+      images: JSON.stringify(imageUrls),
+      imagesData: JSON.stringify(images),
+      image: imageUrls[0] || '',
+      options: JSON.stringify(options),
       variants: JSON.stringify(variants),
       variantCount: variants.length,
       totalInventory,
@@ -271,6 +298,165 @@ export class ShopifyScraper {
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  /**
+   * 获取店铺所有集合（Collections）
+   */
+  async fetchCollections(storeUrl, settings = {}) {
+    const domain = this.normalizeStoreUrl(storeUrl);
+    const url = `https://${domain}/collections.json`;
+    
+    const headers = {
+      'User-Agent': this.getRandomUA(),
+      'Accept': 'application/json',
+    };
+
+    const fetchOptions = { headers };
+
+    if (settings.proxyEnabled) {
+      const proxyUrl = this.getProxy(settings);
+      if (proxyUrl) {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+      }
+    }
+
+    try {
+      const response = await fetch(url, fetchOptions);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const collections = (data.collections || []).map(c => ({
+        collectionId: String(c.id),
+        handle: c.handle,
+        title: c.title,
+        description: this.stripHtml(c.body_html || ''),
+        image: c.image?.src || '',
+        publishedAt: c.published_at,
+        updatedAt: c.updated_at,
+      }));
+      
+      return {
+        success: true,
+        collections,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        collections: [],
+      };
+    }
+  }
+
+  /**
+   * 获取某个集合下的商品列表
+   */
+  async fetchCollectionProducts(storeUrl, collectionHandle, settings = {}, page = 1, limit = 250) {
+    const domain = this.normalizeStoreUrl(storeUrl);
+    const url = `https://${domain}/collections/${collectionHandle}/products.json?limit=${limit}&page=${page}`;
+    
+    const headers = {
+      'User-Agent': this.getRandomUA(),
+      'Accept': 'application/json',
+    };
+
+    const fetchOptions = { headers };
+
+    if (settings.proxyEnabled) {
+      const proxyUrl = this.getProxy(settings);
+      if (proxyUrl) {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+      }
+    }
+
+    try {
+      const response = await fetch(url, fetchOptions);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return {
+        success: true,
+        products: data.products || [],
+        hasMore: (data.products || []).length === limit,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        products: [],
+      };
+    }
+  }
+
+  /**
+   * 爬取某个集合下的所有商品
+   */
+  async scrapeCollection(storeId, collectionId, settings = {}, onProgress = null) {
+    const db = getDb();
+    const store = db.prepare('SELECT * FROM shopify_stores WHERE id = ?').get(storeId);
+    const collection = db.prepare('SELECT * FROM shopify_collections WHERE id = ?').get(collectionId);
+    
+    if (!store) {
+      throw new Error('店铺不存在');
+    }
+    if (!collection) {
+      throw new Error('集合不存在');
+    }
+
+    const results = {
+      total: 0,
+      success: 0,
+      failed: 0,
+      products: [],
+      collectionId,
+    };
+
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const listResult = await this.fetchCollectionProducts(store.domain, collection.handle, settings, page, 250);
+      
+      if (!listResult.success) {
+        console.error(`获取集合商品列表失败 (page ${page}):`, listResult.error);
+        break;
+      }
+
+      for (const product of listResult.products) {
+        try {
+          const parsed = this.parseProductJson(product, store.domain);
+          if (parsed) {
+            parsed.collectionId = collectionId;
+            results.products.push(parsed);
+            results.success++;
+          }
+        } catch (e) {
+          results.failed++;
+        }
+        results.total++;
+        
+        if (onProgress) {
+          onProgress(results);
+        }
+      }
+
+      hasMore = listResult.hasMore;
+      page++;
+
+      // 请求间隔
+      if (hasMore && settings.requestDelay) {
+        await new Promise(resolve => setTimeout(resolve, settings.requestDelay));
+      }
+    }
+
+    return results;
   }
 
   /**

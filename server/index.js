@@ -9,6 +9,7 @@ import proxiesRouter from './routes/proxies.js';
 import settingsRouter from './routes/settings.js';
 import blacklistRouter from './routes/blacklist.js';
 import scanRouter from './routes/scan.js';
+import shopifyRouter from './routes/shopify.js';
 import { TaskRunner } from './services/taskRunner.js';
 import { ScanRunner } from './services/scanRunner.js';
 
@@ -30,6 +31,7 @@ app.use('/api/proxies', proxiesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/blacklist', blacklistRouter);
 app.use('/api/scan', scanRouter);
+app.use('/api/shopify', shopifyRouter);
 
 // 状态接口
 app.get('/api/status', (req, res) => {

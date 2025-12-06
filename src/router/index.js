@@ -42,6 +42,18 @@ const routes = [
     meta: { title: '黑名单扫描', icon: 'Search' },
   },
   {
+    path: '/shopify/stores',
+    name: 'ShopifyStores',
+    component: () => import('../views/ShopifyStores.vue'),
+    meta: { title: 'Shopify 店铺', icon: 'Shop' },
+  },
+  {
+    path: '/shopify/products',
+    name: 'ShopifyProducts',
+    component: () => import('../views/ShopifyProducts.vue'),
+    meta: { title: 'Shopify 商品', icon: 'ShoppingCart' },
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/Settings.vue'),

@@ -223,8 +223,110 @@ export async function initDb() {
       db.exec("ALTER TABLE proxies ADD COLUMN totalUsageCount INTEGER DEFAULT 0");
       console.log('已添加 proxies.totalUsageCount 列');
     }
+
+    // 迁移 shopify_products 表 - 添加新字段
+    const shopifyProductColumns = db.prepare("PRAGMA table_info(shopify_products)").all();
+    const shopifyProductColumnNames = shopifyProductColumns.map(col => col.name);
+    
   } catch (e) {
     console.error('迁移失败:', e.message);
+  }
+
+  // 创建 Shopify 相关表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shopify_stores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain TEXT NOT NULL UNIQUE,
+      name TEXT,
+      apiSupported INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      productCount INTEGER DEFAULT 0,
+      collectionCount INTEGER DEFAULT 0,
+      lastTestAt DATETIME,
+      lastScrapeAt DATETIME,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS shopify_collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      storeId INTEGER NOT NULL,
+      collectionId TEXT NOT NULL,
+      handle TEXT,
+      title TEXT,
+      description TEXT,
+      image TEXT,
+      productCount INTEGER DEFAULT 0,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(storeId, collectionId),
+      FOREIGN KEY (storeId) REFERENCES shopify_stores(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shopify_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      storeId INTEGER NOT NULL,
+      collectionId INTEGER,
+      productId TEXT NOT NULL,
+      handle TEXT,
+      title TEXT,
+      vendor TEXT,
+      productType TEXT,
+      price TEXT,
+      comparePrice TEXT,
+      description TEXT,
+      images TEXT,
+      image TEXT,
+      variants TEXT,
+      variantCount INTEGER DEFAULT 0,
+      totalInventory INTEGER DEFAULT 0,
+      tags TEXT,
+      url TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(storeId, productId),
+      FOREIGN KEY (storeId) REFERENCES shopify_stores(id),
+      FOREIGN KEY (collectionId) REFERENCES shopify_collections(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shopify_collections_storeId ON shopify_collections(storeId);
+    CREATE INDEX IF NOT EXISTS idx_shopify_products_storeId ON shopify_products(storeId);
+    CREATE INDEX IF NOT EXISTS idx_shopify_products_handle ON shopify_products(handle);
+  `);
+
+  // 迁移 shopify 相关表 - 添加新字段
+  try {
+    const spCols = db.prepare("PRAGMA table_info(shopify_products)").all();
+    const spColNames = spCols.map(col => col.name);
+    
+    if (!spColNames.includes('collectionId')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN collectionId INTEGER");
+      console.log('已添加 shopify_products.collectionId 列');
+    }
+    if (!spColNames.includes('options')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN options TEXT");
+      console.log('已添加 shopify_products.options 列');
+    }
+    if (!spColNames.includes('descriptionHtml')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN descriptionHtml TEXT");
+      console.log('已添加 shopify_products.descriptionHtml 列');
+    }
+    if (!spColNames.includes('imagesData')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN imagesData TEXT");
+      console.log('已添加 shopify_products.imagesData 列');
+    }
+    
+    // 创建 collectionId 索引（在迁移之后）
+    db.exec("CREATE INDEX IF NOT EXISTS idx_shopify_products_collectionId ON shopify_products(collectionId)");
+    
+    // 迁移 shopify_stores 表 - 添加 collectionCount 字段
+    const storeCols = db.prepare("PRAGMA table_info(shopify_stores)").all();
+    const storeColNames = storeCols.map(col => col.name);
+    if (!storeColNames.includes('collectionCount')) {
+      db.exec("ALTER TABLE shopify_stores ADD COLUMN collectionCount INTEGER DEFAULT 0");
+      console.log('已添加 shopify_stores.collectionCount 列');
+    }
+  } catch (e) {
+    console.error('Shopify 表迁移失败:', e.message);
   }
 
   console.log('数据库已初始化');

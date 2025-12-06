@@ -67,4 +67,24 @@ export default {
   getScanResults: (id, params) => http.get(`/scan/tasks/${id}/results`, { params }),
   downloadScanResults: (id, filter) => http.get(`/scan/tasks/${id}/download`, { params: { filter }, responseType: 'blob' }),
   getScanStats: () => http.get('/scan/stats'),
+  
+  // Shopify 相关
+  getShopifyStores: () => http.get('/shopify/stores'),
+  addShopifyStore: (data) => http.post('/shopify/stores', data),
+  testShopifyStore: (id) => http.post(`/shopify/stores/${id}/test`),
+  deleteShopifyStore: (id) => http.delete(`/shopify/stores/${id}`),
+  scrapeShopifyStore: (id) => http.post(`/shopify/stores/${id}/scrape`),
+  
+  // Shopify 集合相关
+  getShopifyCollections: (storeId) => http.get(`/shopify/stores/${storeId}/collections`),
+  syncShopifyCollections: (storeId) => http.post(`/shopify/stores/${storeId}/sync-collections`),
+  scrapeShopifyCollection: (collectionId) => http.post(`/shopify/collections/${collectionId}/scrape`),
+  
+  // Shopify 商品相关
+  getShopifyProducts: (params) => http.get('/shopify/products', { params }),
+  deleteShopifyProduct: (id) => http.delete(`/shopify/products/${id}`),
+  batchDeleteShopifyProducts: (ids) => http.post('/shopify/products/batch-delete', { ids }),
+  clearShopifyProducts: (storeId) => http.delete('/shopify/products/all', { params: { storeId } }),
+  exportShopifyProducts: (params) => http.get('/shopify/products/export', { params, responseType: 'blob' }),
+  getShopifyStats: () => http.get('/shopify/stats'),
 };
