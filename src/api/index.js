@@ -82,9 +82,25 @@ export default {
   
   // Shopify 商品相关
   getShopifyProducts: (params) => http.get('/shopify/products', { params }),
+  fetchShopifyProductDetails: (id) => http.post(`/shopify/products/${id}/fetch-details`),
+  batchFetchShopifyProductDetails: (data) => http.post('/shopify/products/batch-fetch-details', data),
   deleteShopifyProduct: (id) => http.delete(`/shopify/products/${id}`),
   batchDeleteShopifyProducts: (ids) => http.post('/shopify/products/batch-delete', { ids }),
   clearShopifyProducts: (storeId) => http.delete('/shopify/products/all', { params: { storeId } }),
   exportShopifyProducts: (params) => http.get('/shopify/products/export', { params, responseType: 'blob' }),
   getShopifyStats: () => http.get('/shopify/stats'),
+  
+  // Shopify 任务相关
+  getShopifyTasks: (params) => http.get('/shopify/tasks', { params }),
+  getShopifyTask: (id) => http.get(`/shopify/tasks/${id}`),
+  createShopifyTask: (data) => http.post('/shopify/tasks', data),
+  pauseShopifyTask: (id) => http.post(`/shopify/tasks/${id}/pause`),
+  resumeShopifyTask: (id) => http.post(`/shopify/tasks/${id}/resume`),
+  cancelShopifyTask: (id) => http.post(`/shopify/tasks/${id}/cancel`),
+  deleteShopifyTask: (id) => http.delete(`/shopify/tasks/${id}`),
+  clearCompletedShopifyTasks: () => http.delete('/shopify/tasks/completed/all'),
+  
+  // Shopify 设置相关
+  getShopifySettings: () => http.get('/shopify/settings'),
+  updateShopifySettings: (data) => http.put('/shopify/settings', data),
 };

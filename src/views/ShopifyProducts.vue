@@ -22,6 +22,24 @@
             批量删除 ({{ selectedIds.length }})
           </el-button>
           <el-button type="danger" @click="clearAll">清空全部</el-button>
+          <el-dropdown @command="handleFetchDetails" style="margin-left: 12px;">
+            <el-button type="primary" :loading="batchFetchingDetails">
+              获取详细信息 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="selected" :disabled="selectedIds.length === 0">
+                  勾选的商品 ({{ selectedIds.length }})
+                </el-dropdown-item>
+                <el-dropdown-item command="current" :disabled="total === 0">
+                  当前筛选结果 ({{ total }})
+                </el-dropdown-item>
+                <el-dropdown-item command="unfetched">
+                  未获取的商品
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </el-col>
       </el-row>
     </el-card>
@@ -144,6 +162,20 @@
         <el-descriptions-item label="描述" :span="2">
           <div style="max-height: 150px; overflow-y: auto;">{{ currentProduct.description || '-' }}</div>
         </el-descriptions-item>
+        <el-descriptions-item label="详细规格" :span="2">
+          <div v-if="currentProduct.detailsFetched">
+            <div style="white-space: pre-line;">{{ currentProduct.detailedDescription || '无' }}</div>
+          </div>
+          <div v-else>
+            <span style="color: #909399;">未获取</span>
+            <el-button size="small" type="primary" link @click="fetchDetails" :loading="fetchingDetails" style="margin-left: 8px;">
+              获取详细信息
+            </el-button>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="尺码建议" :span="2" v-if="currentProduct.detailsFetched && currentProduct.sizeAndFit">
+          <div style="white-space: pre-line;">{{ currentProduct.sizeAndFit }}</div>
+        </el-descriptions-item>
         <el-descriptions-item label="链接" :span="2">
           <a :href="currentProduct.url" target="_blank">{{ currentProduct.url }}</a>
         </el-descriptions-item>
@@ -178,6 +210,7 @@
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { ArrowDown } from '@element-plus/icons-vue';
 import api from '../api';
 
 const route = useRoute();
@@ -193,6 +226,8 @@ const selectedIds = ref([]);
 const detailVisible = ref(false);
 const currentProduct = ref(null);
 const exportDialogVisible = ref(false);
+const fetchingDetails = ref(false);
+const batchFetchingDetails = ref(false);
 
 const allExportFields = [
   { key: 'image', label: '图片' },
@@ -297,6 +332,30 @@ const showDetail = (row) => {
   detailVisible.value = true;
 };
 
+const fetchDetails = async () => {
+  if (!currentProduct.value) return;
+  fetchingDetails.value = true;
+  try {
+    const res = await api.fetchShopifyProductDetails(currentProduct.value.id);
+    // 更新当前商品数据
+    currentProduct.value.detailedDescription = res.data.detailedDescription;
+    currentProduct.value.sizeAndFit = res.data.sizeAndFit;
+    currentProduct.value.detailsFetched = 1;
+    // 更新列表中的数据
+    const idx = products.value.findIndex(p => p.id === currentProduct.value.id);
+    if (idx !== -1) {
+      products.value[idx].detailedDescription = res.data.detailedDescription;
+      products.value[idx].sizeAndFit = res.data.sizeAndFit;
+      products.value[idx].detailsFetched = 1;
+    }
+    ElMessage.success('获取成功');
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '获取失败');
+  } finally {
+    fetchingDetails.value = false;
+  }
+};
+
 const deleteProduct = async (id) => {
   await ElMessageBox.confirm('确定删除该商品？', '提示', { type: 'warning' });
   await api.deleteShopifyProduct(id);
@@ -328,6 +387,43 @@ const clearAll = async () => {
     loadProducts();
   } catch (e) {
     ElMessage.error('清空失败');
+  }
+};
+
+const handleFetchDetails = async (command) => {
+  let confirmMsg = '';
+  let taskData = { type: 'fetch-details' };
+  
+  switch (command) {
+    case 'selected':
+      if (selectedIds.value.length === 0) return;
+      confirmMsg = `确定创建任务获取选中的 ${selectedIds.value.length} 个商品的详细信息？`;
+      taskData.productIds = selectedIds.value;
+      break;
+    case 'current':
+      confirmMsg = `确定创建任务获取当前筛选条件下未获取详情的商品？`;
+      taskData.storeId = filters.value.storeId || undefined;
+      taskData.collectionId = filters.value.collectionId || undefined;
+      break;
+    case 'unfetched':
+      confirmMsg = '确定创建任务获取所有未获取详情的商品？';
+      taskData.storeId = filters.value.storeId || undefined;
+      taskData.collectionId = filters.value.collectionId || undefined;
+      break;
+    default:
+      return;
+  }
+  
+  await ElMessageBox.confirm(confirmMsg + '\n任务将在后台执行，可在"Shopify 任务"页面查看进度。', '创建任务', { type: 'info' });
+  
+  batchFetchingDetails.value = true;
+  try {
+    const res = await api.createShopifyTask(taskData);
+    ElMessage.success(res.data.message || '任务已创建');
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '创建任务失败');
+  } finally {
+    batchFetchingDetails.value = false;
   }
 };
 

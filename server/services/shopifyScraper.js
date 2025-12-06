@@ -7,18 +7,74 @@ export class ShopifyScraper {
   constructor() {
     this.proxyIndex = 0;
     this.proxyUsageCount = {};
+    this.currentUA = null;
+    this.uaRequestCount = 0;
   }
 
   /**
-   * 获取随机 User-Agent
+   * User-Agent 列表
    */
-  getRandomUA() {
-    const uas = [
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    ];
-    return uas[Math.floor(Math.random() * uas.length)];
+  static UA_LIST = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+  ];
+
+  /**
+   * 获取 User-Agent（根据轮换策略）
+   * @param {object} settings - 设置对象
+   * @param {boolean} forceRotate - 是否强制轮换（用于"遇错误时轮换"功能）
+   */
+  getUA(settings = {}, forceRotate = false) {
+    const rotate = settings.uaRotate || 'request';
+    const rotateCount = settings.uaRotateCount || 10;
+    
+    // 初始化 UA
+    if (!this.currentUA) {
+      this.currentUA = ShopifyScraper.UA_LIST[Math.floor(Math.random() * ShopifyScraper.UA_LIST.length)];
+    }
+    
+    let shouldRotate = forceRotate; // 强制轮换优先
+    
+    if (!shouldRotate) {
+      switch (rotate) {
+        case 'none':
+          // 不轮换，使用固定 UA
+          break;
+        case 'request':
+          // 每次请求都轮换
+          shouldRotate = true;
+          break;
+        case 'count':
+          // 按次数轮换
+          this.uaRequestCount++;
+          if (this.uaRequestCount >= rotateCount) {
+            shouldRotate = true;
+            this.uaRequestCount = 0;
+          }
+          break;
+      }
+    }
+    
+    if (shouldRotate) {
+      this.currentUA = ShopifyScraper.UA_LIST[Math.floor(Math.random() * ShopifyScraper.UA_LIST.length)];
+    }
+    
+    return this.currentUA;
+  }
+
+  /**
+   * 获取随机 User-Agent（兼容旧接口）
+   */
+  getRandomUA(useRandom = true) {
+    if (!useRandom) {
+      return ShopifyScraper.UA_LIST[0];
+    }
+    return ShopifyScraper.UA_LIST[Math.floor(Math.random() * ShopifyScraper.UA_LIST.length)];
   }
 
   /**
@@ -298,6 +354,135 @@ export class ShopifyScraper {
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  /**
+   * 从 HTML 页面获取商品详细信息（材质、产地、尺码建议等）
+   * @param {string} productUrl - 商品 URL
+   * @param {object} settings - 设置对象
+   * @param {boolean} isRetry - 是否为重试请求（用于 error 模式 UA 轮换）
+   */
+  async fetchProductDetails(productUrl, settings = {}, isRetry = false) {
+    const timeout = settings.timeout || 30000;
+    
+    const headers = {
+      'User-Agent': this.getUA(settings, isRetry),
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Cache-Control': 'no-cache',
+    };
+
+    const fetchOptions = { 
+      headers,
+      signal: AbortSignal.timeout(timeout),
+    };
+
+    if (settings.proxyEnabled) {
+      const proxyUrl = this.getProxy(settings);
+      if (proxyUrl) {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+      }
+    }
+
+    try {
+      const response = await fetch(productUrl, fetchOptions);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const html = await response.text();
+      
+      // 解析详细描述（材质、产地等）
+      const detailedDescription = this.parseProductDetails(html);
+      
+      // 解析尺码建议
+      const sizeAndFit = this.parseSizeAndFit(html);
+      
+      return {
+        success: true,
+        detailedDescription,
+        sizeAndFit,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * 从 HTML 解析产品详细规格
+   */
+  parseProductDetails(html) {
+    // 尝试多种常见的 Shopify 模板结构
+    const patterns = [
+      // Victoria Beckham 风格
+      /class="product__details"[^>]*><li>(.*?)<\/ul>/gs,
+      // 通用 accordion 风格
+      /data-ga-el="productDetailsDescription"[^>]*>.*?<ul[^>]*>(.*?)<\/ul>/gs,
+      // 其他常见结构
+      /class="product-description"[^>]*>(.*?)<\/div>/gs,
+      /id="product-description"[^>]*>(.*?)<\/div>/gs,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = [...html.matchAll(pattern)];
+      if (matches.length > 0) {
+        // 找到包含材质信息的匹配
+        for (const match of matches) {
+          const content = match[1] || match[0];
+          // 检查是否包含典型的产品规格关键词
+          if (/viscose|cotton|polyester|silk|wool|made in|fabrication|material/i.test(content)) {
+            // 清理 HTML 标签，保留列表结构
+            const cleaned = content
+              .replace(/<li[^>]*>/gi, '\n• ')
+              .replace(/<\/li>/gi, '')
+              .replace(/<[^>]+>/g, '')
+              .replace(/[ \t]+/g, ' ')  // 只替换空格和制表符，保留换行
+              .replace(/\n\s+/g, '\n')  // 清理换行后的空白
+              .trim();
+            return cleaned;
+          }
+        }
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * 从 HTML 解析尺码建议
+   */
+  parseSizeAndFit(html) {
+    const patterns = [
+      // Size & Fit accordion
+      /data-ga-variable-title="Size &amp; Fit"[^>]*>.*?<ul[^>]*class="product__details"[^>]*>(.*?)<\/ul>/gs,
+      /class="size-and-fit"[^>]*>(.*?)<\/div>/gs,
+      /id="size-fit"[^>]*>(.*?)<\/div>/gs,
+    ];
+
+    for (const pattern of patterns) {
+      const match = pattern.exec(html);
+      if (match) {
+        const content = match[1] || match[0];
+        const cleaned = content
+          .replace(/<li[^>]*>/gi, '\n• ')
+          .replace(/<\/li>/gi, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/[ \t]+/g, ' ')  // 只替换空格和制表符，保留换行
+          .replace(/\n\s+/g, '\n')  // 清理换行后的空白
+          .trim();
+        if (cleaned.length > 10) {
+          return cleaned;
+        }
+      }
+    }
+
+    return '';
   }
 
   /**

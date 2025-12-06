@@ -12,10 +12,28 @@
         text-color="#bfcbd9"
         active-text-color="#409eff"
       >
-        <el-menu-item v-for="route in menuRoutes" :key="route.path" :index="route.path">
-          <el-icon><component :is="route.meta.icon" /></el-icon>
-          <span>{{ route.meta.title }}</span>
-        </el-menu-item>
+        <template v-for="route in menuRoutes" :key="route.path">
+          <!-- 有子菜单 -->
+          <el-sub-menu v-if="route.children && route.children.length" :index="route.path">
+            <template #title>
+              <el-icon><component :is="route.meta.icon" /></el-icon>
+              <span>{{ route.meta.title }}</span>
+            </template>
+            <el-menu-item 
+              v-for="child in route.children" 
+              :key="route.path + '/' + child.path" 
+              :index="route.path + '/' + child.path"
+            >
+              <el-icon><component :is="child.meta.icon" /></el-icon>
+              <span>{{ child.meta.title }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <!-- 无子菜单 -->
+          <el-menu-item v-else :index="route.path">
+            <el-icon><component :is="route.meta.icon" /></el-icon>
+            <span>{{ route.meta.title }}</span>
+          </el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
     
@@ -43,7 +61,17 @@ import api from './api';
 
 const route = useRoute();
 const menuRoutes = routes.filter(r => r.meta?.title);
-const currentTitle = computed(() => route.meta?.title || '');
+const currentTitle = computed(() => {
+  // 如果是子路由，显示父级 + 子级标题
+  if (route.matched.length > 1) {
+    const parent = route.matched[route.matched.length - 2];
+    const current = route.matched[route.matched.length - 1];
+    if (parent.meta?.title && current.meta?.title) {
+      return `${parent.meta.title} - ${current.meta.title}`;
+    }
+  }
+  return route.meta?.title || '';
+});
 const systemStatus = ref({ ready: false });
 
 onMounted(async () => {

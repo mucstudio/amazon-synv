@@ -143,6 +143,16 @@ export async function initDb() {
     captchaHandling: 'auto',      // auto=自动处理, skip=跳过, retry=重试
     captchaRetryCount: '2',       // 验证码重试次数
     captchaTimeout: '300',        // 人工处理超时时间（秒）
+    // Shopify 专用设置
+    shopifyRequestDelay: '1000',      // 请求间隔（毫秒）
+    shopifyConcurrency: '3',          // 并发数量
+    shopifyTimeout: '30000',          // 请求超时（毫秒）
+    shopifyProxyEnabled: 'false',     // 是否启用代理
+    shopifyProxyRotateCount: '10',    // 代理轮换次数
+    shopifyRetryCount: '2',           // 失败重试次数
+    shopifyUARotate: 'request',       // UA轮换策略: none=不轮换, request=每次请求, count=按次数
+    shopifyUARotateCount: '10',       // 按次数轮换时的次数
+    shopifyUARotateOnError: 'true',   // 遇错误时轮换 UA（独立开关）
   };
 
   const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -232,6 +242,28 @@ export async function initDb() {
     console.error('迁移失败:', e.message);
   }
 
+  // 创建 Shopify 任务表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shopify_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      totalCount INTEGER DEFAULT 0,
+      processedCount INTEGER DEFAULT 0,
+      successCount INTEGER DEFAULT 0,
+      failCount INTEGER DEFAULT 0,
+      storeId INTEGER,
+      collectionId INTEGER,
+      productIds TEXT,
+      message TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      startedAt DATETIME,
+      completedAt DATETIME
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shopify_tasks_status ON shopify_tasks(status);
+  `);
+
   // 创建 Shopify 相关表
   db.exec(`
     CREATE TABLE IF NOT EXISTS shopify_stores (
@@ -313,6 +345,18 @@ export async function initDb() {
     if (!spColNames.includes('imagesData')) {
       db.exec("ALTER TABLE shopify_products ADD COLUMN imagesData TEXT");
       console.log('已添加 shopify_products.imagesData 列');
+    }
+    if (!spColNames.includes('detailedDescription')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN detailedDescription TEXT");
+      console.log('已添加 shopify_products.detailedDescription 列');
+    }
+    if (!spColNames.includes('sizeAndFit')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN sizeAndFit TEXT");
+      console.log('已添加 shopify_products.sizeAndFit 列');
+    }
+    if (!spColNames.includes('detailsFetched')) {
+      db.exec("ALTER TABLE shopify_products ADD COLUMN detailsFetched INTEGER DEFAULT 0");
+      console.log('已添加 shopify_products.detailsFetched 列');
     }
     
     // 创建 collectionId 索引（在迁移之后）

@@ -42,16 +42,36 @@ const routes = [
     meta: { title: '黑名单扫描', icon: 'Search' },
   },
   {
-    path: '/shopify/stores',
-    name: 'ShopifyStores',
-    component: () => import('../views/ShopifyStores.vue'),
-    meta: { title: 'Shopify 店铺', icon: 'Shop' },
-  },
-  {
-    path: '/shopify/products',
-    name: 'ShopifyProducts',
-    component: () => import('../views/ShopifyProducts.vue'),
-    meta: { title: 'Shopify 商品', icon: 'ShoppingCart' },
+    path: '/shopify',
+    name: 'Shopify',
+    redirect: '/shopify/stores',
+    meta: { title: 'Shopify', icon: 'Shop' },
+    children: [
+      {
+        path: 'stores',
+        name: 'ShopifyStores',
+        component: () => import('../views/ShopifyStores.vue'),
+        meta: { title: '店铺管理', icon: 'Shop' },
+      },
+      {
+        path: 'products',
+        name: 'ShopifyProducts',
+        component: () => import('../views/ShopifyProducts.vue'),
+        meta: { title: '商品数据', icon: 'ShoppingCart' },
+      },
+      {
+        path: 'tasks',
+        name: 'ShopifyTasks',
+        component: () => import('../views/ShopifyTasks.vue'),
+        meta: { title: '任务管理', icon: 'Clock' },
+      },
+      {
+        path: 'settings',
+        name: 'ShopifySettings',
+        component: () => import('../views/ShopifySettings.vue'),
+        meta: { title: '参数设置', icon: 'Setting' },
+      },
+    ],
   },
   {
     path: '/settings',

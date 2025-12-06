@@ -12,6 +12,7 @@ import scanRouter from './routes/scan.js';
 import shopifyRouter from './routes/shopify.js';
 import { TaskRunner } from './services/taskRunner.js';
 import { ScanRunner } from './services/scanRunner.js';
+import { shopifyTaskRunner } from './services/shopifyTaskRunner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -70,6 +71,9 @@ async function start() {
   // 启动扫描任务运行器
   const scanRunner = new ScanRunner();
   scanRunner.start();
+
+  // 启动 Shopify 任务运行器
+  shopifyTaskRunner.start();
 
   app.listen(PORT, () => {
     console.log(`\n========== Amazon Scraper v2 ==========`);
